@@ -11,7 +11,8 @@ import { HandEditPanel, type HandEditPanelProps } from "./hand-edit-panel";
 import type { CodeEditorProps } from "./code-editor";
 
 vi.mock('./code-editor',()=>({default:({source,onChange,readOnly}:CodeEditorProps)=><textarea aria-label="Test editor" readOnly={readOnly} value={source.files[source.entry]} onChange={e=>onChange({...source.files,[source.entry]:e.target.value})}/> }));
-vi.mock('./tweak-panel',()=>({TweakPanel:({label,fields,computed,used,onTweak,onAdd,canAdd,addReason,isPending,selectionKey}: {isPending?:boolean;selectionKey?:string;label:string;fields:NonNullable<Inspection>;computed:{color:string}|null;used:readonly string[];onTweak:(t:{field:'color';value:string})=>void;onAdd:()=>void;canAdd:boolean;addReason?:string})=><section data-testid="tweak-panel" data-pending={isPending?'yes':'no'} data-selection={selectionKey}><p>{label}</p><p data-testid="computed">{computed?.color??'none'}</p><p data-testid="used">{used.join(',')}</p><button onClick={()=>onTweak({field:'color',value:'#abcdef'})} disabled={!fields.color.editable}>Apply colour</button><button onClick={onAdd} disabled={!canAdd}>Add to chat</button><p>{addReason}</p></section>}));
+const tweakProps: Record<string, unknown>[] = [];
+vi.mock('./tweak-panel',()=>({TweakPanel:(props: {isPending?:boolean;selectionKey?:string;fields:NonNullable<Inspection>;computed:{color:string}|null;used:readonly string[];onTweak:(t:{field:'color';value:string})=>void})=>{tweakProps.push(props);const {fields,computed,used,onTweak,isPending,selectionKey}=props;return <section data-testid="tweak-panel" data-pending={isPending?'yes':'no'} data-selection={selectionKey}><p data-testid="computed">{computed?.color??'none'}</p><p data-testid="used">{used.join(',')}</p><button onClick={()=>onTweak({field:'color',value:'#abcdef'})} disabled={!fields.color.editable}>Apply colour</button></section>;}}));
 
 const source:ScreenSource={kind:'html',entry:'index.html',files:{'index.html':'<b>Hi</b>'}};
 const drafts:Draft[]=[];
@@ -73,7 +74,7 @@ it('never previews an old reload after switching active boards',async()=>{
   vi.spyOn(s.live,'getState').mockReturnValue({phase:'compiling',screenId:'b',frameId:'another',attempt:3});await act(async()=>finish({source,versionId:'v2'}));expect(s.live.previewDraft).not.toHaveBeenCalled();
 });
 it('shows no tweak body when inspection cannot verify the picked span',async()=>{
-  const s=setup({tab:'tweak',picked:{boardId:'a',src:'index.html:0:8',label:'Hi',epoch:1,revision:0,computed:null},onAddElement:vi.fn(),identity:()=>({screenId:'persisted'})});render(<HandEditPanel {...s.props}/>);await waitFor(()=>expect(s.compiler.inspect).toHaveBeenCalled());expect(screen.queryByTestId('tweak-panel')).toBeNull();expect(screen.queryByRole('button',{name:'Add to chat'})).toBeNull();
+  const s=setup({tab:'tweak',picked:{boardId:'a',src:'index.html:0:8',label:'Hi',epoch:1,revision:0,computed:null}});render(<HandEditPanel {...s.props}/>);await waitFor(()=>expect(s.compiler.inspect).toHaveBeenCalled());expect(screen.queryByTestId('tweak-panel')).toBeNull();expect(screen.queryByRole('button',{name:'Add to chat'})).toBeNull();
 });
 it('renders the tweak panel only for a valid pick and passes label, computed and used colours',async()=>{
   const computed={color:'rgb(255, 0, 0)',backgroundColor:'rgb(0, 0, 255)'} as never;
@@ -81,19 +82,22 @@ it('renders the tweak panel only for a valid pick and passes label, computed and
   vi.mocked(s.compiler.inspect).mockResolvedValue({color:{editable:true,value:'#000000'}} as Inspection);
   const view=render(<HandEditPanel {...s.props}/>);expect(screen.queryByTestId('tweak-panel')).toBeNull();
   await waitFor(()=>expect(screen.getByTestId('tweak-panel')).toBeInTheDocument());
-  expect(screen.getByText('Hi')).toBeInTheDocument();expect(screen.getByTestId('computed')).toHaveTextContent('rgb(255, 0, 0)');expect(screen.getByTestId('used')).toHaveTextContent('#ff0000,#0000ff');
-  expect(screen.getByText('Add to chat will be available when chat is connected.')).toBeInTheDocument();
+  expect(screen.getByTestId('computed')).toHaveTextContent('rgb(255, 0, 0)');expect(screen.getByTestId('used')).toHaveTextContent('#ff0000,#0000ff');
+  expect(screen.queryByText(/Add to chat/)).toBeNull();
+  expect(Object.keys(tweakProps.at(-1)!).sort()).toEqual(['computed','fields','isPending','onTweak','selectionKey','used']);
   view.unmount();
 });
 it('never renders a Pick button and never touches select mode',()=>{
   for(const tab of ['tweak','code'] as const){const s=setup({tab});const view=render(<HandEditPanel {...s.props}/>);expect(screen.queryByRole('button',{name:'Pick'})).toBeNull();view.unmount();expect(s.live.setPickEnabled).not.toHaveBeenCalled();}
 });
-it('shows only the title and Close in the panel header',()=>{
-  const s=setup({tab:'tweak',readOnly:true});render(<HandEditPanel {...s.props}/>);for(const name of ['Undo','Redo','Interact','Edit'])expect(screen.queryByRole('button',{name})).toBeNull();expect(screen.getByText('Screen')).toBeInTheDocument();
+it('shows only the Tweak and Code tabs and Close in the panel header',()=>{
+  const s=setup({tab:'tweak',readOnly:true});render(<HandEditPanel {...s.props}/>);for(const name of ['Undo','Redo','Interact','Edit'])expect(screen.queryByRole('button',{name})).toBeNull();expect(screen.queryByText('Screen')).toBeNull();
+  const header=screen.getByTestId('live-panel').firstElementChild as HTMLElement;
+  expect(Array.from(header.querySelectorAll('button')).map(b=>b.getAttribute('aria-label')??b.textContent)).toEqual(['Tweak','Code','Close']);
   fireEvent.click(screen.getByRole('button',{name:'Close'}));expect(s.onClose).toHaveBeenCalledOnce();
 });
-it('forwards tab changes and a custom title',()=>{
-  const s=setup({tab:'tweak',title:'Home'});render(<HandEditPanel {...s.props}/>);expect(screen.getByText('Home')).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Code'}));expect(s.onTabChange).toHaveBeenCalledWith('code');
+it('forwards tab changes',()=>{
+  const s=setup({tab:'tweak'});render(<HandEditPanel {...s.props}/>);fireEvent.click(screen.getByRole('tab',{name:'Code'}));expect(s.onTabChange).toHaveBeenCalledWith('code');
 });
 it('keeps the stopped-phase reload hint',()=>{
   const s=setup({tab:'tweak'});vi.spyOn(s.live,'getState').mockReturnValue({phase:'stopped',screenId:'a',frameId:'frame',attempt:1} as never);render(<HandEditPanel {...s.props}/>);expect(screen.getByText('Reload the live screen to select an element.')).toBeInTheDocument();
@@ -248,8 +252,7 @@ describe('the Tweak body through an edit',()=>{
     await waitFor(()=>expect(screen.getByTestId('tweak-panel')).toHaveAttribute('data-pending','no'));
     expect(screen.getByTestId('tweak-panel').getAttribute('data-selection')).toBe(key);
     view.rerender(<Harness props={s.props} picked={{boardId:'a',src:'index.html:40:60',label:'Other',epoch:3,revision:1,computed:null}}/>);
-    await waitFor(()=>expect(screen.getByText('Other')).toBeInTheDocument());
-    expect(screen.getByTestId('tweak-panel').getAttribute('data-selection')).not.toBe(key);
+    await waitFor(()=>expect(screen.getByTestId('tweak-panel').getAttribute('data-selection')).not.toBe(key));
   });
   it('Undo right after a tweak remaps the element that is about to be selected again',async()=>{
     const {s,onReselect}=await tweaked();
@@ -262,8 +265,9 @@ describe('the Tweak body through an edit',()=>{
   it('disables the Tweak tab with its reason and never switches to it',()=>{
     const s=setup({tab:'code',tweakDisabledReason:'Click something in the screen to tweak it'});
     render(<HandEditPanel {...s.props}/>);
-    const tab=screen.getByRole('button',{name:'Tweak'});
+    const tab=screen.getByRole('tab',{name:'Tweak'});
     expect(tab).toHaveAttribute('aria-disabled','true');
+    expect(tab).toHaveAccessibleDescription('Click something in the screen to tweak it');
     fireEvent.click(tab);
     expect(s.onTabChange).not.toHaveBeenCalled();
   });

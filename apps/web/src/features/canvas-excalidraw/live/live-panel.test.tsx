@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Layout } from "@astryxdesign/core/Layout";
@@ -10,33 +10,84 @@ afterEach(cleanup);
 const source = { kind: "react" as const, files: { "App.tsx": "export default function App() { return <main>Hi</main>; }", "styles.css": "main { display: grid; }" }, entry: "App.tsx" };
 
 describe("LivePanel", () => {
-  it("shows its content without a tab list while there is one tab, and closes", async () => {
+  it("shows its content without a tab control while there is one tab, and closes", async () => {
     const onClose = vi.fn();
-    render(<Layout end={<LivePanel title="Screen code" tab="code" tabs={[{value:"code",label:"Code"}]} onTabChange={vi.fn()} onClose={onClose}><p>body</p></LivePanel>} />);
-    expect(screen.getByText("Screen code")).toBeInTheDocument();
+    render(<Layout end={<LivePanel tab="code" tabs={[{ value: "code", label: "Code" }]} onTabChange={vi.fn()} onClose={onClose}><p>body</p></LivePanel>} />);
     expect(screen.getByText("body")).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "Tabs" })).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("shows the default Tweak and Code tabs", async () => {
-    const onTabChange = vi.fn();
-    render(<Layout end={(
-      <LivePanel title="Screen" tab="code" onTabChange={onTabChange} onClose={vi.fn()}><p>body</p></LivePanel>
-    )} />);
-    expect(screen.getByRole("navigation", { name: "Tabs" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Tweak" }));
-    expect(onTabChange).toHaveBeenCalledWith("tweak");
+  it("is a column with the shell class, scrolling vertically, that carries the test id and the key handler", () => {
+    const onKeyDown = vi.fn();
+    render(<Layout end={<LivePanel tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()} onKeyDown={onKeyDown}><p>body</p></LivePanel>} />);
+    const column = screen.getByTestId("live-panel");
+    expect(column).toHaveClass("orion-panel");
+    fireEvent.keyDown(screen.getByText("body"), { key: "a" });
+    expect(onKeyDown).toHaveBeenCalledOnce();
   });
 });
 
 describe("LivePanel header", () => {
-  it("carries only the title and Close: Undo, Redo and Edit moved to the pill", () => {
-    render(<Layout end={<LivePanel title="Screen" tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()}><p>body</p></LivePanel>} />);
-    const header = screen.getByTestId("live-panel").firstElementChild as HTMLElement;
-    expect(Array.from(header.querySelectorAll("button")).map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual(["Close"]);
+  const header = () => screen.getByTestId("live-panel").firstElementChild as HTMLElement;
+
+  it("holds exactly the Tweak and Code tabs and Close: no title, no Undo, Redo or Interact", () => {
+    render(<Layout end={<LivePanel tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()}><p>body</p></LivePanel>} />);
+    const tabs = within(header()).getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Tweak", "Code"]);
+    expect(within(header()).getByRole("tablist")).toBeInTheDocument();
+    expect(Array.from(header().querySelectorAll("button")).map((b) => b.getAttribute("aria-label") ?? b.textContent)).toEqual(["Tweak", "Code", "Close"]);
+    expect(header().textContent).toBe("TweakCode");
+    expect(screen.queryByText("Screen")).toBeNull();
     for (const name of ["Undo", "Redo", "Interact", "Edit"]) expect(screen.queryByRole("button", { name })).toBeNull();
+  });
+
+  it("marks the current tab selected and switches on a click", async () => {
+    const onTabChange = vi.fn();
+    render(<Layout end={<LivePanel tab="code" onTabChange={onTabChange} onClose={vi.fn()}><p>body</p></LivePanel>} />);
+    expect(screen.getByRole("tab", { name: "Code" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Tweak" })).toHaveAttribute("aria-selected", "false");
+    await userEvent.click(screen.getByRole("tab", { name: "Tweak" }));
+    expect(onTabChange).toHaveBeenCalledWith("tweak");
+  });
+
+  it("keeps a disabled Tweak visible with its reason as title and description, and ignores clicks on it", async () => {
+    const onTabChange = vi.fn();
+    render(<Layout end={<LivePanel tab="code" onTabChange={onTabChange} onClose={vi.fn()} disabledTabs={{ tweak: "Select an element to tweak it." }}><p>body</p></LivePanel>} />);
+    const tweak = screen.getByRole("tab", { name: "Tweak" });
+    expect(tweak).toHaveAttribute("aria-disabled", "true");
+    expect(tweak).toHaveAttribute("title", "Select an element to tweak it.");
+    expect(tweak).toHaveAccessibleDescription("Select an element to tweak it.");
+    await userEvent.click(tweak);
+    expect(onTabChange).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("tab", { name: "Code" }));
+    expect(onTabChange).toHaveBeenCalledWith("code");
+  });
+
+  it("never disables the tab that is current", () => {
+    render(<Layout end={<LivePanel tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()} disabledTabs={{ tweak: "Not now." }}><p>body</p></LivePanel>} />);
+    const tweak = screen.getByRole("tab", { name: "Tweak" });
+    expect(tweak).not.toHaveAttribute("aria-disabled");
+    expect(tweak).not.toHaveAttribute("title");
+  });
+
+  it("moves between enabled tabs with the arrow keys", async () => {
+    const onTabChange = vi.fn();
+    render(<Layout end={<LivePanel tab="tweak" onTabChange={onTabChange} onClose={vi.fn()}><p>body</p></LivePanel>} />);
+    screen.getByRole("tab", { name: "Tweak" }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onTabChange).toHaveBeenCalledWith("code");
+    expect(screen.getByRole("tab", { name: "Code" })).toHaveFocus();
+  });
+
+  it("closes from the 30px icon button named Close", async () => {
+    const onClose = vi.fn();
+    render(<Layout end={<LivePanel tab="tweak" onTabChange={vi.fn()} onClose={onClose}><p>body</p></LivePanel>} />);
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close).toHaveClass("orion-i-iconbtn");
+    await userEvent.click(close);
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });
 

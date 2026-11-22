@@ -358,12 +358,6 @@ export function createHandEditing(deps: {
       const value = diagnostics.get(draft);
       return value?.revision === draft.getState().revision ? value.issues : [];
     },
-    identity(draft: Draft) {
-      const current = targets.get(draft)?.current;
-      return current && current.kind !== "board"
-        ? { screenId: current.screenId }
-        : null;
-    },
     canEdit: (draft: Draft) => deps.access === "edit" && targets.has(draft),
     key: (draft: Draft) => keys.get(draft),
     flushAll(){return Promise.allSettled(drafts.getSnapshot().map(item=>drafts.get(item.boardId)!.flush()));},

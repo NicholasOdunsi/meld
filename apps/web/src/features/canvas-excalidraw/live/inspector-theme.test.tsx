@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
-import { INSPECTOR_CLASS, MENU_LAYOUT, INSPECTOR_CSS, INSPECTOR_VARS, InspectorThemeStyle } from "./inspector-theme";
+import { ICON_SIZE, INSPECTOR_CLASS, MENU_LAYOUT, PANEL_LAYOUT, INSPECTOR_CSS, INSPECTOR_VARS, InspectorThemeStyle } from "./inspector-theme";
 
 afterEach(cleanup);
 
@@ -36,10 +36,27 @@ describe("inspector theme", () => {
     expect(INSPECTOR_VARS["--orion-i-section-weight"]).toBe("600");
     expect(INSPECTOR_VARS["--orion-i-section-chevron"]).toBe("#8a8a8a");
     // The sheet itself only references the variables for these: no literal colours outside the :root block.
-    const rules = INSPECTOR_CSS.split("\n").filter((line) => line.startsWith(".orion-i-") || line.startsWith(".orion-pill"));
+    const rules = INSPECTOR_CSS.split("\n").filter((line) => line.startsWith(".orion-i-") || line.startsWith(".orion-pill") || line.startsWith(".orion-panel") || line.startsWith(".orion-seg") || line.startsWith(".orion-code"));
     for (const rule of rules) expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b/i);
     // The dropdown list is portalled to <body>, so it carries the scope class that gets the variables.
     expect(INSPECTOR_CSS).toContain(".orion-i-scope,");
+  });
+  it("carries the mock's panel shell and segmented control values", () => {
+    expect(PANEL_LAYOUT.width).toBe(296);
+    expect(INSPECTOR_VARS["--orion-i-shell-width"]).toBe("296px");
+    expect(INSPECTOR_VARS["--orion-i-shell-border"]).toBe("1px solid #2c2c2c");
+    expect(INSPECTOR_VARS["--orion-i-shell-pad"]).toBe("12px 14px");
+    expect(INSPECTOR_VARS["--orion-i-seg-track"]).toBe("#262626");
+    expect(INSPECTOR_VARS["--orion-i-seg-active"]).toBe("#3a3a3a");
+    expect(INSPECTOR_VARS["--orion-i-seg-fg"]).toBe("#8d8d8d");
+    expect(INSPECTOR_VARS["--orion-i-seg-active-fg"]).toBe("#ffffff");
+    expect(INSPECTOR_VARS["--orion-i-seg-radius"]).toBe("10px");
+    expect(INSPECTOR_VARS["--orion-i-seg-tab-radius"]).toBe("8px");
+    expect(INSPECTOR_VARS["--orion-i-seg-tab-pad"]).toBe("6px 14px");
+    expect(INSPECTOR_VARS["--orion-i-iconbtn"]).toBe("30px");
+    expect(INSPECTOR_VARS["--orion-i-iconbtn-radius"]).toBe("8px");
+    expect(INSPECTOR_VARS["--orion-i-iconbtn-fg"]).toBe("#a0a0a0");
+    expect(ICON_SIZE.close).toBe(16);
   });
   it("feeds the dropdown's size and gap from one place, for the sheet and the placement maths", () => {
     expect(INSPECTOR_VARS["--orion-i-menu-max-h"]).toBe(`${MENU_LAYOUT.maxHeight}px`);

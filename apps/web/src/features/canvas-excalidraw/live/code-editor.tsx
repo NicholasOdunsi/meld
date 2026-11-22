@@ -9,11 +9,7 @@ import { setDiagnostics } from "@codemirror/lint";
 import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
 import { Button } from "@astryxdesign/core/Button";
-import { IconButton } from "@astryxdesign/core/IconButton";
-import { List, ListItem } from "@astryxdesign/core/List";
 import { Banner } from "@astryxdesign/core/Banner";
-import { Text } from "@astryxdesign/core/Text";
-import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Copy, Download } from "lucide-react";
 import type { CompileError } from "@meld/screen-runtime";
 import type { ScreenSource } from "@meld/screen-runtime/source";
@@ -21,6 +17,7 @@ import type { Files } from "@meld/screen-runtime/edit/types";
 import { copyFile, downloadSource } from "./source-export";
 import { codeExtensions } from "./code-theme";
 import { pageIsDark } from "./page-dark";
+import { ICON_SIZE } from "./inspector-theme";
 
 const external = Annotation.define<boolean>();
 const permissions = new WeakMap<EditorView, Compartment>();
@@ -275,36 +272,46 @@ export function CodeEditor(props: CodeEditorProps) {
   const files = Object.keys(props.source.files);
   const issues = props.issues ?? [];
   return (
-    <VStack gap={2}>
-      <HStack gap={2} vAlign="center" justify="between">
+    <VStack gap={0} className="orion-code orion-i-scope">
+      <header className="orion-code__bar">
         {files.length > 1 ? (
-          <TabList value={path} onChange={setChosen} size="sm">
+          <HStack role="group" aria-label="Files" className="orion-seg orion-seg--small">
             {files.map((file) => (
-              <Tab key={file} value={file} label={file} />
+              <button
+                key={file}
+                type="button"
+                className="orion-seg__tab"
+                aria-pressed={file === path}
+                onClick={() => setChosen(file)}
+              >
+                {file}
+              </button>
             ))}
-          </TabList>
+          </HStack>
         ) : (
-          <Text type="supporting">{path}</Text>
+          <p className="orion-code__path">{path}</p>
         )}
-        <HStack gap={1}>
-          <IconButton
-            label="Copy"
-            tooltip="Copy"
-            variant="ghost"
-            size="sm"
-            icon={<Copy />}
+        <HStack gap={0} className="orion-code__actions">
+          <button
+            type="button"
+            className="orion-i-iconbtn"
+            aria-label="Copy"
+            title="Copy"
             onClick={() => void perform("copy")}
-          />
-          <IconButton
-            label="Download"
-            tooltip="Download"
-            variant="ghost"
-            size="sm"
-            icon={<Download />}
+          >
+            <Copy size={ICON_SIZE.bar} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="orion-i-iconbtn"
+            aria-label="Download"
+            title="Download"
             onClick={() => void perform("download")}
-          />
+          >
+            <Download size={ICON_SIZE.bar} aria-hidden />
+          </button>
         </HStack>
-      </HStack>
+      </header>
       {failure ? (
         <Banner
           status="error"
@@ -317,26 +324,20 @@ export function CodeEditor(props: CodeEditorProps) {
           }
         />
       ) : null}
-      <VStack
-        ref={host}
-        width="100%"
-        minHeight={280}
-        style={{ borderRadius: "var(--radius-element)", overflow: "hidden" }}
-      />
+      <VStack ref={host} className="orion-code__host" />
       {issues.length ? (
-        <List density="compact">
+        <ul className="orion-code__issues">
           {issues.map((issue, index) => (
-            <ListItem
-              key={index}
-              label={
-                issue.line === undefined
-                  ? issue.message
-                  : `${issue.line}:${(issue.column ?? 0) + 1} ${issue.message}`
-              }
-              description={issue.file}
-            />
+            <li key={index} className="orion-code__issue">
+              {issue.line === undefined
+                ? issue.message
+                : `${issue.line}:${(issue.column ?? 0) + 1} ${issue.message}`}
+              {issue.file ? (
+                <small className="orion-code__issue-file">{issue.file}</small>
+              ) : null}
+            </li>
           ))}
-        </List>
+        </ul>
       ) : null}
     </VStack>
   );

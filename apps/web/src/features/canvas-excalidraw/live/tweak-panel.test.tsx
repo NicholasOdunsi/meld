@@ -30,20 +30,16 @@ function fields(overrides: Partial<Record<Field, Partial<FieldState>>> = {}) {
 }
 function setup(props: Partial<TweakPanelProps> = {}) {
   const onTweak = vi.fn();
-  const onAdd = vi.fn();
   render(
     <TweakPanel
-      label="Action"
       fields={fields()}
       computed={COMPUTED}
       used={[]}
       onTweak={onTweak}
-      onAdd={onAdd}
-      canAdd
       {...props}
     />,
   );
-  return { onTweak, onAdd };
+  return { onTweak };
 }
 // The unit is never shown, so a number field's name is just its label.
 const number = (name: string) => screen.getByRole("textbox", { name });
@@ -174,7 +170,7 @@ it("steps from a fractional rendered value to a whole number", () => {
 it("keeps the same input, and its focus, through a refresh after each step", () => {
   const onTweak = vi.fn();
   const props: TweakPanelProps = {
-    label: "Action", fields: fields({ fontSize: { value: "16" } }), computed: { ...COMPUTED, fontSize: "16" }, used: [], onTweak, onAdd: vi.fn(), canAdd: true,
+    fields: fields({ fontSize: { value: "16" } }), computed: { ...COMPUTED, fontSize: "16" }, used: [], onTweak,
   };
   const { rerender } = render(<TweakPanel {...props} />);
   const size = number("Size");
@@ -188,7 +184,7 @@ it("keeps the same input, and its focus, through a refresh after each step", () 
   // A step while pending does nothing (no double apply from a stale value).
   fireEvent.keyDown(size, { key: "ArrowUp" });
   expect(onTweak).toHaveBeenCalledTimes(1);
-  rerender(<TweakPanel {...props} label="Action!" fields={fields({ fontSize: { value: "17" } })} computed={{ ...COMPUTED, fontSize: "17" }} />);
+  rerender(<TweakPanel {...props} fields={fields({ fontSize: { value: "17" } })} computed={{ ...COMPUTED, fontSize: "17" }} />);
   expect(number("Size")).toBe(size);
   expect(document.activeElement).toBe(size);
   expect(size).toHaveValue("17");
@@ -205,13 +201,13 @@ it("ignores colour and dropdown changes while pending, and dims the body", () =>
 });
 
 it("marks the Tweak body pending (dimmed through the theme, busy for assistive tech) only while pending", () => {
-  const { container } = render(<TweakPanel label="A" fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} isPending />);
+  const { container } = render(<TweakPanel fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} isPending />);
   const body = container.querySelector(".orion-i-body")!;
   expect(body).toHaveAttribute("data-pending", "true");
   expect(body).toHaveAttribute("aria-busy", "true");
   expect(body).not.toHaveAttribute("style");
   cleanup();
-  const idle = render(<TweakPanel label="A" fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} />);
+  const idle = render(<TweakPanel fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} />);
   expect(idle.container.querySelector(".orion-i-body")).not.toHaveAttribute("data-pending");
   expect(idle.container.querySelector(".orion-i-body")).not.toHaveAttribute("aria-busy");
 });
@@ -246,7 +242,7 @@ it("accepts a pasted px unit", () => {
 
 it("resets an edited box to the new real value but leaves untouched siblings alone", () => {
   const props: TweakPanelProps = {
-    label: "Action", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+    fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
   };
   const { rerender } = render(<TweakPanel {...props} />);
   fireEvent.change(number("Padding"), { target: { value: "16" } });
@@ -275,14 +271,6 @@ it("disables code-owned fields once with a note", () => {
   expect(screen.getAllByText("Set by the screen's code. Change it in Code.")).toHaveLength(2); // Typography + Layout sections
 });
 
-it("never offers Add to chat, whatever the host says (it returns when chat exists)", () => {
-  setup({ canAdd: true });
-  expect(screen.queryByRole("button", { name: "Add to chat" })).toBeNull();
-  cleanup();
-  setup({ canAdd: false, addReason: "Save this screen first." });
-  expect(screen.queryByText("Save this screen first.")).toBeNull();
-});
-
 it("disables the dropdowns of code-owned fields too", () => {
   setup({ fields: fields({ fontFamily: { editable: false }, fontWeight: { editable: false } }) });
   expect(screen.getByRole("combobox", { name: "Font" })).toBeDisabled();
@@ -291,7 +279,7 @@ it("disables the dropdowns of code-owned fields too", () => {
 
 it("shows a normalised value after a px commit and keeps following the value (Undo)", () => {
   const props: TweakPanelProps = {
-    label: "Action", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+    fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
   };
   const { rerender } = render(<TweakPanel {...props} />);
   fireEvent.change(number("Padding"), { target: { value: "9px" } });
@@ -304,7 +292,7 @@ it("shows a normalised value after a px commit and keeps following the value (Un
 
 it("drops an invalid number and its error when the element's value changes", () => {
   const props: TweakPanelProps = {
-    label: "Action", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+    fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
   };
   const { rerender } = render(<TweakPanel {...props} />);
   fireEvent.change(number("Padding"), { target: { value: "abc" } });
@@ -317,7 +305,7 @@ it("drops an invalid number and its error when the element's value changes", () 
 
 it("does not carry typed text or an error into another element, but keeps the DOM node for the same one", () => {
   const props: TweakPanelProps = {
-    label: "A", selectionKey: "a", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(), onAdd: vi.fn(), canAdd: true,
+    selectionKey: "a", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
   };
   const { rerender } = render(<TweakPanel {...props} />);
   const padding = number("Padding");
@@ -331,7 +319,7 @@ it("does not carry typed text or an error into another element, but keeps the DO
   rerender(<TweakPanel {...props} isPending={false} />);
   expect(number("Padding")).toBe(padding);
   expect(number("Padding")).toHaveValue("77");
-  rerender(<TweakPanel {...props} label="B" selectionKey="b" />);
+  rerender(<TweakPanel {...props} selectionKey="b" />);
   expect(number("Padding")).toHaveValue("8");
   expect(number("Width")).toHaveValue("120");
   expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();

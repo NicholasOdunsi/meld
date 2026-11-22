@@ -544,14 +544,13 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               draft={liveDraft} boardId={liveState.screenId} tab={panelTab}
               compiler={compiler} live={live} picked={editing.getPicked()} readOnly={!liveEditable}
               issues={editing.issues(liveDraft)}
-              identity={()=>editing.identity(liveDraft)}
               onReselect={editing.setReselect}
               reselect={editing.getReselect()}
               tweakDisabledReason={tweakDisabled}
               registerHistoryObserver={editing.setHistoryObserver}
               onClose={closePanel} onTabChange={onTabChange} />
           ) : (
-            <LivePanel title="Screen" tab={panelTab} onTabChange={onTabChange} onClose={closePanel} disabledTabs={tweakDisabled ? { tweak: tweakDisabled } : undefined}>
+            <LivePanel tab={panelTab} onTabChange={onTabChange} onClose={closePanel} disabledTabs={tweakDisabled ? { tweak: tweakDisabled } : undefined}>
               <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />
             </LivePanel>
           )

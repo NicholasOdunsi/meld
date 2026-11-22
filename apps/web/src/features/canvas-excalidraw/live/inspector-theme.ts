@@ -17,6 +17,10 @@ export const PILL_LAYOUT = { gap: 12, margin: 12, leftInset: 76, bottomInset: 60
 // numbers feed the CSS variables below and the placement maths (when to open upward), so they cannot drift.
 export const MENU_LAYOUT = { maxHeight: 240, gap: 4 } as const;
 
+// The side panel shell (pixels): its width. The same number feeds the CSS variable below and the
+// LayoutPanel that hosts it, so the two cannot drift.
+export const PANEL_LAYOUT = { width: 296 } as const;
+
 export const INSPECTOR_VARS = {
   // The floating surface shared by the pill and the dock.
   "--orion-i-surface": "#262626",
@@ -56,6 +60,36 @@ export const INSPECTOR_VARS = {
   "--orion-i-section-pad": "12px 0 6px",
   "--orion-i-section-head-gap": "10px",
   "--orion-i-row-gap": "8px",
+  // The side panel shell: a fixed-width column with the Tweak | Code control and Close on top.
+  "--orion-i-shell-width": `${PANEL_LAYOUT.width}px`,
+  "--orion-i-shell-border": "1px solid #2c2c2c",
+  "--orion-i-shell-pad": "12px 14px",
+  "--orion-i-shell-head-gap": "12px",
+  // The segmented control (Tweak | Code, and the file pills in the Code tab).
+  "--orion-i-seg-track": "#262626",
+  "--orion-i-seg-active": "#3a3a3a",
+  "--orion-i-seg-fg": "#8d8d8d",
+  "--orion-i-seg-active-fg": "#ffffff",
+  "--orion-i-seg-radius": "10px",
+  "--orion-i-seg-pad": "3px",
+  "--orion-i-seg-tab-radius": "8px",
+  "--orion-i-seg-tab-pad": "6px 14px",
+  "--orion-i-seg-tab-weight": "500",
+  "--orion-i-seg-small-radius": "8px",
+  "--orion-i-seg-small-pad": "2px",
+  "--orion-i-seg-small-tab-radius": "6px",
+  "--orion-i-seg-small-tab-pad": "4px 10px",
+  "--orion-i-seg-small-size": "12px",
+  // A quiet square icon button (Close, Copy, Download).
+  "--orion-i-iconbtn": "30px",
+  "--orion-i-iconbtn-radius": "8px",
+  "--orion-i-iconbtn-fg": "#a0a0a0",
+  // The Code tab: its top bar, the editor's host and the diagnostics under it.
+  "--orion-i-mono": "ui-monospace, SFMono-Regular, Menlo, monospace",
+  "--orion-i-code-gap": "8px",
+  "--orion-i-code-min-h": "280px",
+  "--orion-i-code-issue-size": "11.5px",
+  "--orion-i-code-issue-pad": "6px 10px",
   // One look for EVERY kind of field (text, number, dropdown, colour).
   "--orion-i-field-h": "34px",
   "--orion-i-field-radius": "9px",
@@ -82,7 +116,7 @@ export const INSPECTOR_VARS = {
 } as const;
 
 // Icon sizes (pixels) drawn inside fields and section titles, from the mock.
-export const ICON_SIZE = { field: 15, chevron: 14, auto: 13 } as const;
+export const ICON_SIZE = { field: 15, chevron: 14, auto: 13, close: 16, bar: 16 } as const;
 
 const toBlock = (vars: Readonly<Record<string, string>>) =>
   Object.entries(vars).map(([name, value]) => `${name}:${value};`).join("");
@@ -98,6 +132,30 @@ export const INSPECTOR_CSS = `
 .orion-pill__btn[aria-disabled="true"]{color:var(--orion-i-btn-disabled-fg);cursor:default}
 .orion-pill__btn[aria-disabled="true"]:hover{background:transparent}
 .orion-pill__divider{flex:none;border:0;width:1px;height:var(--orion-i-pill-divider-h);margin:0 var(--orion-i-pill-divider-margin);background:var(--orion-i-divider)}
+.orion-panel{box-sizing:border-box;width:100%;height:100%;overflow-x:hidden;overflow-y:auto;background:var(--orion-i-panel-bg);border-left:var(--orion-i-shell-border);padding:var(--orion-i-shell-pad);color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size);line-height:1.2}
+.orion-panel__top{display:flex;align-items:center;justify-content:space-between;flex:none;margin-bottom:var(--orion-i-shell-head-gap)}
+.orion-panel__top>.orion-i-iconbtn{margin-inline-start:auto}
+.orion-seg{display:flex;align-items:center;background:var(--orion-i-seg-track);border-radius:var(--orion-i-seg-radius);padding:var(--orion-i-seg-pad);min-width:0}
+.orion-seg__tab{appearance:none;border:0;margin:0;cursor:pointer;flex:none;padding:var(--orion-i-seg-tab-pad);border-radius:var(--orion-i-seg-tab-radius);background:transparent;color:var(--orion-i-seg-fg);font:inherit;font-weight:var(--orion-i-seg-tab-weight);line-height:1.2;white-space:nowrap}
+.orion-seg__tab:hover{color:var(--orion-i-seg-active-fg)}
+.orion-seg__tab:focus-visible{outline:2px solid var(--orion-i-focus);outline-offset:1px}
+.orion-seg__tab[aria-selected="true"],.orion-seg__tab[aria-pressed="true"]{background:var(--orion-i-seg-active);color:var(--orion-i-seg-active-fg)}
+.orion-seg__tab[aria-disabled="true"]{color:var(--orion-i-btn-disabled-fg);cursor:default}
+.orion-seg--small{padding:var(--orion-i-seg-small-pad);border-radius:var(--orion-i-seg-small-radius);overflow-x:auto}
+.orion-seg--small .orion-seg__tab{padding:var(--orion-i-seg-small-tab-pad);border-radius:var(--orion-i-seg-small-tab-radius);font-size:var(--orion-i-seg-small-size)}
+.orion-i-iconbtn{appearance:none;border:0;margin:0;padding:0;cursor:pointer;display:grid;place-items:center;flex:none;width:var(--orion-i-iconbtn);height:var(--orion-i-iconbtn);border-radius:var(--orion-i-iconbtn-radius);background:transparent;color:var(--orion-i-iconbtn-fg)}
+.orion-i-iconbtn:hover{background:var(--orion-i-btn-hover);color:var(--orion-i-field-fg)}
+.orion-i-iconbtn:focus-visible{outline:2px solid var(--orion-i-focus);outline-offset:1px}
+.orion-code{display:flex;flex-direction:column;gap:var(--orion-i-code-gap);min-width:0}
+.orion-code__bar{display:flex;align-items:center;justify-content:space-between;gap:var(--orion-i-code-gap);min-width:0}
+.orion-code__bar .orion-seg{flex:0 1 auto}
+.orion-code__path{margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--orion-i-field-label);font-family:var(--orion-i-mono);font-size:var(--orion-i-field-small)}
+.orion-code__actions{display:flex;align-items:center;flex:none;margin-inline-start:auto}
+.orion-code__host{min-width:0;min-height:var(--orion-i-code-min-h);border-radius:var(--orion-i-field-radius);overflow:hidden}
+.orion-code__issues{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;border-radius:var(--orion-i-field-radius);background:var(--orion-i-field-bg);font-family:var(--orion-i-mono);font-size:var(--orion-i-code-issue-size);line-height:1.4}
+.orion-code__issue{padding:var(--orion-i-code-issue-pad);color:var(--orion-i-field-fg);overflow-wrap:anywhere}
+.orion-code__issue:not(:first-child){border-top:1px solid var(--orion-i-panel-divider)}
+.orion-code__issue-file{display:block;color:var(--orion-i-field-muted)}
 .orion-i-body{display:flex;flex-direction:column;box-sizing:border-box;color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size);line-height:1.2}
 .orion-i-body[data-pending]{opacity:var(--orion-i-pending-opacity)}
 .orion-i-section:not(:first-of-type){border-top:1px solid var(--orion-i-panel-divider)}

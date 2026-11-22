@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { EditorView } from "@codemirror/view";
 import {
   CodeEditor,
@@ -163,4 +163,57 @@ it("has no Undo/Redo buttons but keeps the keyboard shortcuts, off when read-onl
   });
   expect(onUndo).toHaveBeenCalledOnce();
   expect(onRedo).toHaveBeenCalledOnce();
+});
+
+it("has a slim top bar: Copy and Download as 30px icon buttons, and the file path when there is one file", () => {
+  const single = { ...source, files: { "App.tsx": "a" } };
+  const { container } = render(<CodeEditor source={single} onChange={vi.fn()} />);
+  const bar = container.querySelector(".orion-code__bar") as HTMLElement;
+  expect(bar).not.toBeNull();
+  expect(bar).toHaveTextContent("App.tsx");
+  expect(bar.querySelector(".orion-seg")).toBeNull();
+  for (const name of ["Copy", "Download"]) {
+    const button = screen.getByRole("button", { name });
+    expect(bar).toContainElement(button);
+    expect(button).toHaveClass("orion-i-iconbtn");
+    expect(button).toHaveAttribute("title", name);
+  }
+  expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Redo" })).toBeNull();
+});
+
+it("shows several files as small pills in the segmented style, the current one pressed", () => {
+  const { container } = render(<CodeEditor source={source} onChange={vi.fn()} />);
+  const group = container.querySelector(".orion-code__bar .orion-seg") as HTMLElement;
+  expect(group).toHaveClass("orion-seg--small");
+  expect(group).toHaveAttribute("role", "group");
+  const pills = within(group).getAllByRole("button");
+  expect(pills.map((pill) => pill.textContent)).toEqual(["App.tsx", "other.css"]);
+  for (const pill of pills) expect(pill).toHaveClass("orion-seg__tab");
+  expect(pills[0]).toHaveAttribute("aria-pressed", "true");
+  expect(pills[1]).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(pills[1]);
+  expect(screen.getByRole("button", { name: "other.css" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "App.tsx" })).toHaveAttribute("aria-pressed", "false");
+});
+
+it("lists diagnostics in the quiet mono list, with the file under the message", () => {
+  const { container } = render(
+    <CodeEditor source={source} onChange={vi.fn()} issues={[{ file: "other.css", message: "bad rule", line: 3, column: 0 }, { file: "App.tsx", message: "no position" }]} />,
+  );
+  const list = container.querySelector("ul.orion-code__issues") as HTMLElement;
+  expect(list).not.toBeNull();
+  const items = within(list).getAllByRole("listitem");
+  expect(items).toHaveLength(2);
+  expect(items[0]).toHaveTextContent("3:1 bad rule");
+  expect(items[0]).toHaveTextContent("other.css");
+  expect(within(items[1]).getByText("no position")).toBeInTheDocument();
+});
+
+it("leaves Cmd/Ctrl+Z to the editor inside .cm-editor and hosts it in the rounded host", () => {
+  const onUndo = vi.fn();
+  const { container } = render(<CodeEditor source={source} onChange={vi.fn()} onUndo={onUndo} />);
+  expect(container.querySelector(".orion-code__host .cm-editor")).not.toBeNull();
+  fireEvent.keyDown(container.querySelector(".cm-content")!, { key: "z", ctrlKey: true });
+  expect(onUndo).toHaveBeenCalledOnce();
 });

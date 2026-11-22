@@ -16,13 +16,6 @@ export type Selected = {
   epoch: number;
   computed: Computed | null;
 };
-export type ElementChip = {
-  kind: "element";
-  screenId: string;
-  versionId: string;
-  src: string;
-  label: string;
-};
 
 export async function inspectPickedElement(
   draft: Draft,
@@ -71,40 +64,6 @@ export async function commitTweak(
   draft.replace(result.files);
   const after = draft.getState();
   if (after.revision !== before.revision) preview(after.source, after.revision);
-}
-
-export async function addPickedElement(
-  draft: Draft,
-  selected: Selected,
-  current: () => Selected | null,
-  identity: () => { screenId: string } | null,
-  send?: (chip: ElementChip) => void,
-): Promise<boolean> {
-  if (
-    !send ||
-    current() !== selected ||
-    draft.getState().revision !== selected.revision
-  )
-    return false;
-  await draft.flush();
-  const after = draft.getState(),
-    target = identity();
-  if (
-    after.status !== "clean" ||
-    after.revision !== selected.revision ||
-    current() !== selected ||
-    !target ||
-    !after.base
-  )
-    return false;
-  send({
-    kind: "element",
-    screenId: target.screenId,
-    versionId: after.base,
-    src: selected.src,
-    label: selected.label,
-  });
-  return true;
 }
 
 // The file part of a "file:start:end" element tag.

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { EditResult, Inspection } from "@meld/screen-runtime/edit/types";
 import { createEditDraft } from "./edit-draft";
 import {
-  addPickedElement,
   commitTweak,
   inspectPickedElement,
   shiftTag,
@@ -126,46 +125,6 @@ it("fences delayed inspection", async () => {
   expect(await pending).toBeNull();
   draft.dispose();
 });
-it("sends an injected durable element chip only after a clean flush", async () => {
-  const draft = createEditDraft(
-    page("old"),
-    "v1",
-    async () => ({ status: "conflict", versionId: "v2" }),
-    async () => null,
-  );
-  const pick = selected();
-  const send = vi.fn();
-  expect(
-    await addPickedElement(
-      draft,
-      pick,
-      () => pick,
-      () => ({ screenId: "screen" }),
-      send,
-    ),
-  ).toBe(true);
-  expect(send).toHaveBeenCalledExactlyOnceWith({
-    kind: "element",
-    screenId: "screen",
-    versionId: "v1",
-    src: pick.src,
-    label: "Action",
-  });
-  draft.replace(page("mine").files);
-  const newer = { ...pick, revision: 1 };
-  expect(
-    await addPickedElement(
-      draft,
-      newer,
-      () => newer,
-      () => ({ screenId: "screen" }),
-      send,
-    ),
-  ).toBe(false);
-  expect(send).toHaveBeenCalledTimes(1);
-  draft.dispose();
-});
-
 describe("element tags after an edit", () => {
   it("moves the end of a tag by the change in length and keeps the file and start", () => {
     expect(shiftTag("a.tsx:10:50", 7)).toBe("a.tsx:10:57");

@@ -10,16 +10,10 @@ import { ICON_SIZE } from "./inspector-theme";
 import { displayFontName, displayValues, FAMILIES, WEIGHTS, type FieldView } from "./inspector-values";
 
 export type TweakPanelProps = {
-  // The element's name. The Figma-style panel no longer shows it (the pill and the outline say which element it is).
-  label?: string;
   fields: NonNullable<Inspection>;
   computed: Computed | null;
   used: readonly string[];
   onTweak: (tweak: Tweak) => void;
-  // "Add to chat" is out of the Tweak body until chat exists; the host (hand-edit-panel) still passes these, and Task 4 stops.
-  onAdd?: () => void;
-  canAdd?: boolean;
-  addReason?: string;
   // The last change is being applied and the element read again: the fields stay (dimmed, same
   // DOM nodes, focus kept) but take no new change until the fresh values arrive.
   isPending?: boolean;
