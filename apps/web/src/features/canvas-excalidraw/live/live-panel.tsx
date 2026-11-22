@@ -17,6 +17,15 @@ export type LivePanelTab = "code" | "tweak";
 export const LIVE_PANEL_TABS: readonly { value: LivePanelTab; label: string }[] = [{ value: "tweak", label: "Tweak" }, { value: "code", label: "Code" }];
 export const LIVE_PANEL_WIDTH = PANEL_LAYOUT.width;
 
+// The quiet square Close button both panels (live screen, shape) carry in their header.
+export function PanelCloseButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" className="orion-i-iconbtn" aria-label="Close" onClick={onClick}>
+      <X size={ICON_SIZE.close} aria-hidden />
+    </button>
+  );
+}
+
 // The inspector's side panel shell (the owner-approved custom surface, styled only by inspector-theme.ts):
 // a fixed-width column that scrolls, with the Tweak | Code control on the left of the header and Close on the right.
 export function LivePanel({ tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, onKeyDown, disabledTabs, children }: {
@@ -70,9 +79,7 @@ export function LivePanel({ tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, o
               })}
             </HStack>
           ) : null}
-          <button type="button" className="orion-i-iconbtn" aria-label="Close" onClick={onClose}>
-            <X size={ICON_SIZE.close} aria-hidden />
-          </button>
+          <PanelCloseButton onClick={onClose} />
         </header>
         {children}
       </VStack>

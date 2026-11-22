@@ -113,6 +113,14 @@ export const INSPECTOR_VARS = {
   "--orion-i-menu-max-h": `${MENU_LAYOUT.maxHeight}px`,
   "--orion-i-menu-gap": `${MENU_LAYOUT.gap}px`,
   "--orion-i-menu-z": "2147483000",
+  // The colour popup: the same surface as the pill, a grid of round swatches, a Hex box in the field look.
+  "--orion-i-pop-radius": "12px",
+  "--orion-i-pop-pad": "12px",
+  "--orion-i-pop-gap": "10px",
+  "--orion-i-pop-row-gap": "8px",
+  "--orion-i-pop-swatch": "18px",
+  "--orion-i-pop-ring": "0 0 0 2px #262626, 0 0 0 4px #8c8c8c",
+  "--orion-i-pop-ring-current": "0 0 0 2px #262626, 0 0 0 4px #e8e8e8",
 } as const;
 
 // Icon sizes (pixels) drawn inside fields and section titles, from the mock.
@@ -122,7 +130,7 @@ const toBlock = (vars: Readonly<Record<string, string>>) =>
   Object.entries(vars).map(([name, value]) => `${name}:${value};`).join("");
 
 export const INSPECTOR_CSS = `
-.${INSPECTOR_CLASS},.orion-i-scope,.astryx-popover:has(.orion-shapes-menu){${toBlock(INSPECTOR_VARS)}}
+.${INSPECTOR_CLASS},.orion-i-scope,.astryx-popover:has(.orion-shapes-menu),.astryx-popover:has(.orion-i-pop){${toBlock(INSPECTOR_VARS)}}
 .orion-pill{position:absolute;left:0;top:0;z-index:6;pointer-events:auto;display:flex;align-items:center;gap:var(--orion-i-pill-gap);padding:var(--orion-i-pill-pad);box-sizing:border-box;border-radius:var(--orion-i-pill-radius);background:var(--orion-i-surface);border:var(--orion-i-border);box-shadow:var(--orion-i-shadow)}
 .orion-pill__btn{appearance:none;border:0;margin:0;padding:0;cursor:pointer;display:grid;place-items:center;flex:none;min-width:var(--orion-i-pill-btn);height:var(--orion-i-pill-btn);border-radius:var(--orion-i-btn-radius);background:transparent;color:var(--orion-i-btn-fg);font:inherit;line-height:1}
 .orion-pill__btn--text{padding:0 var(--orion-i-pill-text-pad);font-size:inherit;font-weight:500}
@@ -191,10 +199,24 @@ export const INSPECTOR_CSS = `
 .orion-i-note,.orion-i-error{margin:0;font-size:var(--orion-i-field-small);color:var(--orion-i-field-muted)}
 .orion-i-error{color:var(--orion-i-error)}
 .orion-i-menu:not([data-placed]){opacity:0}
-.orion-i-menu{position:fixed;z-index:var(--orion-i-menu-z);box-sizing:border-box;margin:0;padding:var(--orion-i-menu-pad);list-style:none;overflow:auto;max-height:var(--orion-i-menu-max-h);border-radius:var(--orion-i-menu-radius);background:var(--orion-i-surface);border:var(--orion-i-border);box-shadow:var(--orion-i-shadow);color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size);outline:0}
+.orion-i-menu{position:fixed;z-index:var(--orion-i-menu-z);box-sizing:border-box;margin:0;padding:var(--orion-i-menu-pad);list-style:none;overflow:auto;max-height:var(--orion-i-menu-max-h);border-radius:var(--orion-i-menu-radius);background:var(--orion-i-surface);border:var(--orion-i-border);box-shadow:var(--orion-i-shadow);color:var(--orion-i-field-fg);font-family:var(--font-family-body);font-size:var(--orion-i-field-size);outline:0}
 .orion-i-menu__item{display:flex;align-items:center;height:var(--orion-i-menu-item-h);padding:var(--orion-i-field-pad);border-radius:var(--orion-i-field-radius);cursor:pointer;white-space:nowrap}
 .orion-i-menu__item[data-active]{background:var(--orion-i-btn-hover)}
 .orion-i-menu__item[aria-selected="true"]{background:var(--orion-i-field-bg)}
+.astryx-popover:has(.orion-i-pop){background:var(--orion-i-surface) !important;padding:0 !important;border:var(--orion-i-border);border-radius:var(--orion-i-pop-radius);box-shadow:var(--orion-i-shadow);color:var(--orion-i-field-fg)}
+.orion-i-pop{box-sizing:border-box;display:flex;flex-direction:column;gap:var(--orion-i-pop-gap);padding:var(--orion-i-pop-pad);color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size)}
+.orion-i-pop__row{display:flex;flex-wrap:wrap;gap:var(--orion-i-pop-row-gap)}
+.orion-i-pop__group{display:flex;flex-direction:column;gap:var(--orion-i-pop-row-gap)}
+.orion-i-pop__label{margin:0;font-size:var(--orion-i-field-small);color:var(--orion-i-field-muted)}
+.orion-i-pop__sw{appearance:none;position:relative;border:0;margin:0;padding:0;cursor:pointer;flex:none;width:var(--orion-i-pop-swatch);height:var(--orion-i-pop-swatch);border-radius:50%;background:transparent;outline:0}
+.orion-i-pop__sw::before{content:"";position:absolute;inset:0;box-sizing:border-box;border-radius:50%;background:var(--orion-i-pop-fill);filter:var(--orion-i-pop-filter);border:var(--orion-i-swatch-border)}
+.orion-i-pop__sw:hover,.orion-i-pop__sw:focus-visible{box-shadow:var(--orion-i-pop-ring)}
+.orion-i-pop__sw[aria-current="true"]{box-shadow:var(--orion-i-pop-ring-current)}
+.orion-i-pop__none{appearance:none;border:0;margin:0;cursor:pointer;display:flex;align-items:center;gap:var(--orion-i-field-gap);height:var(--orion-i-field-h);padding:var(--orion-i-field-pad);border-radius:var(--orion-i-field-radius);background:transparent;color:var(--orion-i-field-fg);font:inherit;text-align:start}
+.orion-i-pop__none:hover,.orion-i-pop__none:focus-visible{background:var(--orion-i-btn-hover);outline:0}
+.orion-i-hex{appearance:none;border:0;margin:0;outline:0;box-sizing:border-box;width:100%;height:var(--orion-i-field-h);padding:var(--orion-i-field-pad);border-radius:var(--orion-i-field-radius);background:var(--orion-i-field-bg);color:var(--orion-i-field-fg);font:inherit;font-size:var(--orion-i-field-size)}
+.orion-i-hex:focus{outline:2px solid var(--orion-i-focus);outline-offset:0}
+.orion-i-hex[aria-invalid="true"]{outline:1px solid var(--orion-i-error)}
 `;
 
 // One <style>, rendered once by the board root. Same markup on the server and the client.

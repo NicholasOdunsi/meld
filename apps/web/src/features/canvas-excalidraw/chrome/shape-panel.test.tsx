@@ -16,21 +16,61 @@ function setup(props: Partial<Parameters<typeof ShapePanel>[0]> = {}) {
   render(<Layout end={<ShapePanel style={style} kind="shape" onChange={onChange} onClose={onClose} onTextSize={onTextSize} textSize={20} {...props} />} />);
   return { onChange, onClose, onTextSize };
 }
-const number = (name: string) => screen.getByRole("textbox", { name: new RegExp(`^${name}( \\(.+\\))?$`) });
+const number = (name: string) => screen.getByRole("textbox", { name });
 async function choose(selector: string, option: string) {
   fireEvent.click(screen.getByRole("combobox", { name: selector }));
   fireEvent.click(await screen.findByRole("option", { name: option }));
 }
 
 describe("ShapePanel", () => {
-  it("renders every shape control under the Shape title", () => {
+  it("renders every shape control in Fill, Stroke, Corners and Appearance sections", () => {
     setup();
-    expect(screen.getByText("Shape")).toBeInTheDocument();
     expect(screen.getByTestId("shape-panel")).toBeInTheDocument();
+    for (const title of ["Fill", "Stroke", "Corners", "Appearance"]) expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     for (const name of ["Fill", "Stroke"]) expect(screen.getByRole("button", { name })).toBeInTheDocument();
     for (const name of ["Style", "Corners"]) expect(screen.getByRole("combobox", { name })).toBeInTheDocument();
     expect(number("Thickness")).toHaveValue("2");
     expect(number("Opacity")).toHaveValue("100");
+  });
+
+  it("has no tabs and no title text: the header is just Close", () => {
+    setup();
+    const panel = screen.getByTestId("shape-panel");
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryByText("Shape")).toBeNull();
+    expect(screen.queryByText("Text")).toBeNull();
+    const header = panel.querySelector("header");
+    expect(header).not.toBeNull();
+    expect(header!.textContent).toBe("");
+    expect(Array.from(header!.querySelectorAll("button")).map((b) => b.getAttribute("aria-label"))).toEqual(["Close"]);
+    expect(screen.getByRole("button", { name: "Close" })).toHaveClass("orion-i-iconbtn");
+  });
+
+  it("shows the Fill row's None state, and a set fill as its hex", () => {
+    setup();
+    const fill = screen.getByRole("button", { name: "Fill" });
+    expect(fill).toHaveAccessibleDescription("None");
+    expect(fill.closest(".orion-i-field")).toHaveTextContent("None");
+    expect(screen.getByRole("button", { name: "Stroke" })).toHaveAccessibleDescription("1E1E1E");
+    cleanup();
+    setup({ style: { ...style, fill: "#ef4444" } });
+    expect(screen.getByRole("button", { name: "Fill" })).toHaveAccessibleDescription("EF4444");
+  });
+
+  it("builds every field from the shared inspector look, colour rows included", () => {
+    setup();
+    for (const control of [screen.getByRole("button", { name: "Fill" }), screen.getByRole("button", { name: "Stroke" }), number("Thickness"), screen.getByRole("combobox", { name: "Style" }), screen.getByRole("combobox", { name: "Corners" }), number("Opacity")]) {
+      expect(control.closest(".orion-i-field")).not.toBeNull();
+    }
+    // Opacity carries its unit as a trailing %.
+    expect(number("Opacity").closest(".orion-i-field")).toHaveTextContent("%");
+  });
+
+  it("picks the colour popup surface class", () => {
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Stroke" }));
+    expect(document.querySelector(".orion-i-pop")).not.toBeNull();
   });
 
   it("hides Corners for an ellipse and both Fill and Corners for an arrow", () => {
@@ -120,12 +160,13 @@ describe("ShapePanel", () => {
 
   it("shows only Colour and Size for text", () => {
     const { onChange, onTextSize } = setup({ kind: "text", style: { ...style, stroke: "#112233" } });
-    expect(screen.getByText("Text")).toBeInTheDocument();
+    expect(screen.queryByText("Shape")).toBeNull();
     expect(screen.getByRole("button", { name: "Colour" })).toBeInTheDocument();
     expect(number("Size")).toHaveValue("20");
     for (const name of ["Fill", "Stroke"]) expect(screen.queryByRole("button", { name })).toBeNull();
     for (const name of ["Style", "Corners"]) expect(screen.queryByRole("combobox", { name })).toBeNull();
     expect(screen.queryByRole("textbox", { name: /Thickness|Opacity/ })).toBeNull();
+    for (const title of ["Fill", "Stroke", "Corners", "Appearance"]) expect(screen.queryByRole("heading", { name: title })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Colour" }));
     fireEvent.click(screen.getByRole("button", { name: "#ef4444" }));
     expect(onChange).toHaveBeenLastCalledWith({ stroke: "#ef4444" });
@@ -139,13 +180,15 @@ describe("ShapePanel", () => {
 
   it("shows shape colours as the dark canvas draws them (theme filter on every swatch)", () => {
     setup({ style: { ...style, fill: "#ffffff" } });
-    const filtered = () => Array.from(document.querySelectorAll<SVGCircleElement>("circle[data-swatch]"));
+    const filter = "invert(93%) hue-rotate(180deg)";
     // The two trigger swatches (fill white, stroke #1e1e1e) are filtered like the canvas.
-    expect(document.querySelectorAll("button[aria-label='Fill'] circle[data-swatch], button[aria-label='Stroke'] circle[data-swatch]")).toHaveLength(2);
-    expect(filtered().length).toBeGreaterThanOrEqual(2);
-    expect(filtered().every((c) => c.style.filter === "invert(93%) hue-rotate(180deg)")).toBe(true);
+    const triggers = Array.from(document.querySelectorAll<HTMLElement>(".orion-i-field .orion-i-swatch[data-swatch]"));
+    expect(triggers).toHaveLength(2);
+    expect(triggers.every((swatch) => swatch.style.filter === filter)).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Stroke" }));
-    expect(filtered().every((c) => c.style.filter === "invert(93%) hue-rotate(180deg)")).toBe(true);
+    const popup = Array.from(document.querySelectorAll<HTMLElement>(".orion-i-pop button[data-swatch]"));
+    expect(popup.length).toBeGreaterThan(10);
+    expect(popup.every((swatch) => swatch.style.getPropertyValue("--orion-i-pop-filter") === filter)).toBe(true);
   });
 
   it("keeps the same thickness box, and its focus, across steps and the element's refresh", () => {

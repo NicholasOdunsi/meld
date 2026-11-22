@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { ColourField } from "./colour-field";
+import { ColourRow } from "./inspector-ui";
+import { INSPECTOR_CSS } from "./inspector-theme";
 afterEach(cleanup);
-function open(props: Partial<Parameters<typeof ColourField>[0]> = {}) {
+function open(props: Partial<Parameters<typeof ColourRow>[0]> = {}) {
   const onChange = vi.fn();
-  render(<ColourField label="Background colour" value="#123456" used={[]} onChange={onChange} {...props} />);
+  render(<ColourRow ariaLabel="Background colour" value="#123456" used={[]} onChange={onChange} {...props} />);
   fireEvent.click(screen.getByRole("button", { name: "Background colour" }));
   return onChange;
 }
@@ -82,20 +83,32 @@ it("moves up and down by row, clamping to the shorter row", () => {
 });
 it("draws swatches through the board's dark canvas filter only when asked", () => {
   open({ value: "#1e1e1e", canvasFilter: true });
-  const swatches = Array.from(document.querySelectorAll<SVGCircleElement>("circle[data-swatch]"));
+  // A popup swatch is a button whose dot is drawn by a pseudo-element, so the hover ring is never filtered.
+  const swatches = Array.from(document.querySelectorAll<HTMLElement>(".orion-i-pop button[data-swatch]"));
   expect(swatches.length).toBeGreaterThan(10);
-  for (const circle of swatches) expect(circle.style.filter).toBe("invert(93%) hue-rotate(180deg)");
+  for (const swatch of swatches) expect(swatch.style.getPropertyValue("--orion-i-pop-filter")).toBe("invert(93%) hue-rotate(180deg)");
   cleanup();
   open({ value: "#1e1e1e" });
-  for (const circle of document.querySelectorAll<SVGCircleElement>("circle[data-swatch]")) expect(circle.style.filter).toBe("");
+  for (const swatch of document.querySelectorAll<HTMLElement>(".orion-i-pop button[data-swatch]")) expect(swatch.style.getPropertyValue("--orion-i-pop-filter")).toBe("none");
 });
 it("names the trigger by its label and describes the current colour", () => {
-  render(<ColourField label="Background colour" value="#123456" used={[]} onChange={vi.fn()} />);
-  const trigger = screen.getByRole("button", { name: "Background colour" });
-  expect(trigger).toHaveAccessibleDescription("Current colour #123456");
+  render(<ColourRow ariaLabel="Background colour" value="#123456" used={[]} onChange={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Background colour" })).toHaveAccessibleDescription("123456");
   cleanup();
-  render(<ColourField label="Fill" value={null} used={[]} onChange={vi.fn()} onClear={vi.fn()} />);
-  expect(screen.getByRole("button", { name: "Fill" })).toHaveAccessibleDescription("No colour");
+  render(<ColourRow ariaLabel="Fill" value={null} used={[]} onChange={vi.fn()} onClear={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Fill" })).toHaveAccessibleDescription("None");
+});
+it("styles the popup like the pill: the popover surface class, swatches as native buttons, a Hex box in the field look", () => {
+  open({ onClear: vi.fn() });
+  const pop = document.querySelector(".orion-i-pop");
+  expect(pop).not.toBeNull();
+  expect(pop).toContainElement(screen.getByRole("textbox", { name: "Hex" }));
+  expect(screen.getByRole("textbox", { name: "Hex" })).toHaveClass("orion-i-hex");
+  expect(screen.getByRole("button", { name: "#ef4444" }).tagName).toBe("BUTTON");
+  expect(screen.getByRole("button", { name: "None" })).toBeInTheDocument();
+  // The sheet gives the popover the pill's surface, border and shadow (as variables, 18px swatches, a hover ring).
+  expect(INSPECTOR_CSS).toMatch(/\.astryx-popover:has\(\.orion-i-pop\)\{[^}]*background:var\(--orion-i-surface\)[^}]*border:var\(--orion-i-border\)[^}]*box-shadow:var\(--orion-i-shadow\)/);
+  expect(INSPECTOR_CSS).toMatch(/\.orion-i-pop__sw:hover[^{]*\{[^}]*box-shadow:var\(--orion-i-pop-ring\)/);
 });
 it("keeps the popup open when focus moves from the hex box to a swatch inside it", () => {
   const onChange = open({ value: "#654321" });

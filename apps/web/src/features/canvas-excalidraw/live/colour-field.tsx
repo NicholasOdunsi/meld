@@ -1,14 +1,11 @@
 "use client";
-import { useRef, useState, type FocusEvent, type KeyboardEvent, type ComponentType } from "react";
+import { useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ComponentType } from "react";
+import { CircleDashed } from "lucide-react";
 import { Popover } from "@astryxdesign/core/Popover";
-import { Button } from "@astryxdesign/core/Button";
-import { IconButton } from "@astryxdesign/core/IconButton";
-import { Grid } from "@astryxdesign/core/Grid";
-import { VStack } from "@astryxdesign/core/VStack";
 import { HStack } from "@astryxdesign/core/HStack";
-import { Text } from "@astryxdesign/core/Text";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { VStack } from "@astryxdesign/core/VStack";
 import { PALETTE, normaliseHex } from "./colour-palette";
+import { ICON_SIZE } from "./inspector-theme";
 
 export type ColourFieldProps = {
   label: string;
@@ -20,31 +17,22 @@ export type ColourFieldProps = {
   // The board's dark canvas draws every colour through Excalidraw's theme filter. Shape colours turn
   // this on so a swatch looks like the shape on the canvas; screens (plain iframes) leave it off.
   canvasFilter?: boolean;
-  // Draws the trigger instead of the default button (the inspector's field row). It must render one
-  // native <button> wired to `onClick`, which the popover anchors to and the Escape-reopen guard needs.
-  trigger?: ComponentType<ColourTriggerProps>;
+  // Draws the trigger (the inspector's field row). It must render one native <button> wired to
+  // `onClick`, which the popover anchors to and the Escape-reopen guard needs.
+  trigger: ComponentType<ColourTriggerProps>;
 };
 export type ColourTriggerProps = { label: string; value: string | null; canvasFilter: boolean; isDisabled: boolean; onClick: () => void };
 // Excalidraw 0.18 dark theme: `.excalidraw.theme--dark { --theme-filter: invert(93%) hue-rotate(180deg) }`.
 export const CANVAS_DARK_FILTER = "invert(93%) hue-rotate(180deg)";
-// A swatch shows the user's own colour, so its fill is the one literal value allowed here.
-function Swatch({ hex, filtered = false }: { hex: string | null; filtered?: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" width="1em" height="1em" aria-hidden>
-      {hex ? (
-        <circle cx="8" cy="8" r="6.5" fill={hex} stroke="var(--color-border-emphasized)" style={filtered ? { filter: CANVAS_DARK_FILTER } : undefined} data-swatch={hex} />
-      ) : (
-        <circle cx="8" cy="8" r="6.5" fill="none" stroke="var(--color-border-emphasized)" strokeDasharray="2 2" />
-      )}
-    </svg>
-  );
-}
 // The swatch grid is one tab stop (roving tabindex); arrow keys move within it. Rows are the palette rows
 // followed by the "used" colours as one row; the DOM order of the swatch buttons matches that flat order.
+// A swatch shows the user's own colour: it reaches the sheet as a variable, and the dot is a pseudo-element
+// of the button so the dark-canvas filter never touches the hover ring.
 function SwatchButton({
   hex,
   index,
   isStop,
+  isCurrent,
   filtered,
   onPick,
   onStep,
@@ -52,17 +40,21 @@ function SwatchButton({
   hex: string;
   index: number;
   isStop: boolean;
+  isCurrent: boolean;
   filtered: boolean;
   onPick: (hex: string) => void;
   onStep: (event: KeyboardEvent<HTMLElement>, index: number) => void;
 }) {
+  const style = { "--orion-i-pop-fill": hex, "--orion-i-pop-filter": filtered ? CANVAS_DARK_FILTER : "none" } as CSSProperties;
   return (
-    <IconButton
-      label={hex}
-      tooltip={hex}
-      icon={<Swatch hex={hex} filtered={filtered} />}
-      variant="ghost"
-      size="sm"
+    <button
+      type="button"
+      className="orion-i-pop__sw"
+      aria-label={hex}
+      title={hex}
+      aria-current={isCurrent ? "true" : undefined}
+      data-swatch={hex}
+      style={style}
       tabIndex={isStop ? 0 : -1}
       onClick={() => onPick(hex)}
       onKeyDown={(event) => onStep(event, index)}
@@ -142,44 +134,49 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
     setOpen(true);
   };
   const content = (
-    <VStack gap={2} padding={2} onKeyDownCapture={(event) => { if (event.key === "Escape") escaped.current = true; }}>
+    <VStack className="orion-i-pop orion-i-scope" onKeyDownCapture={(event) => { if (event.key === "Escape") escaped.current = true; }}>
       {PALETTE.map((row, r) => (
-        <Grid key={row.join()} columns={row.length} gap={0.5}>
+        <HStack key={row.join()} wrap="wrap" className="orion-i-pop__row">
           {row.map((hex, c) => {
             const index = PALETTE.slice(0, r).reduce((n, x) => n + x.length, 0) + c;
-            return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} filtered={canvasFilter} onPick={pick} onStep={step} />;
+            return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} isCurrent={hex === current} filtered={canvasFilter} onPick={pick} onStep={step} />;
           })}
-        </Grid>
+        </HStack>
       ))}
       {used.length > 0 ? (
-        <VStack gap={1}>
-          <Text type="supporting">Used on this screen</Text>
-          <HStack gap={0.5} wrap="wrap">
+        <VStack className="orion-i-pop__group">
+          <p className="orion-i-pop__label">Used on this screen</p>
+          <HStack wrap="wrap" className="orion-i-pop__row">
             {used.map((hex, c) => {
               const index = PALETTE.flat().length + c;
-              return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} filtered={canvasFilter} onPick={pick} onStep={step} />;
+              return <SwatchButton key={hex} hex={hex} index={index} isStop={index === tabStop} isCurrent={hex === current} filtered={canvasFilter} onPick={pick} onStep={step} />;
             })}
           </HStack>
         </VStack>
       ) : null}
       {onClear ? (
-        <Button
-          label="None"
-          variant="ghost"
-          size="sm"
-          icon={<Swatch hex={null} />}
+        <button
+          type="button"
+          className="orion-i-pop__none"
           onClick={() => {
             onClear();
             setOpen(false);
           }}
-        />
+        >
+          <CircleDashed size={ICON_SIZE.field} aria-hidden />
+          None
+        </button>
       ) : null}
-      <TextInput
-        label="Hex"
-        size="sm"
+      <input
+        className="orion-i-hex"
+        type="text"
+        aria-label="Hex"
+        aria-invalid={error ? true : undefined}
+        autoComplete="off"
+        spellCheck={false}
         value={text}
-        onChange={(next) => {
-          setText(next);
+        onChange={(event) => {
+          setText(event.target.value);
           setError(false);
         }}
         onBlur={onHexBlur}
@@ -189,8 +186,8 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
             commit();
           }
         }}
-        status={error ? { type: "error", message: "Use a colour like #1A2B3C." } : undefined}
       />
+      {error ? <p role="alert" className="orion-i-error">Use a colour like #1A2B3C.</p> : null}
     </VStack>
   );
   return (
@@ -209,13 +206,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
       label={label}
     >
       {/* The name stays the field label; the current colour is read out as its description. */}
-      {Trigger ? <Trigger label={label} value={value} canvasFilter={canvasFilter} isDisabled={!!isDisabled} onClick={reopenAfterEscape} /> : (
-        <Button
-          onClick={reopenAfterEscape}
-          label={label} aria-description={value ? `Current colour ${value}` : "No colour"} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
-          {value ?? "None"}
-        </Button>
-      )}
+      <Trigger label={label} value={value} canvasFilter={canvasFilter} isDisabled={!!isDisabled} onClick={reopenAfterEscape} />
     </Popover>
   );
 }
