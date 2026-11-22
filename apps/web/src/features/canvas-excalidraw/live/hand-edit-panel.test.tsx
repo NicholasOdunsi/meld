@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import type { Inspection } from "@meld/screen-runtime/edit/types";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import { createEditDraft, type Draft, type Read, type Write } from "./edit-draft";
@@ -10,7 +11,7 @@ import { HandEditPanel, type HandEditPanelProps } from "./hand-edit-panel";
 import type { CodeEditorProps } from "./code-editor";
 
 vi.mock('./code-editor',()=>({default:({source,onChange,readOnly}:CodeEditorProps)=><textarea aria-label="Test editor" readOnly={readOnly} value={source.files[source.entry]} onChange={e=>onChange({...source.files,[source.entry]:e.target.value})}/> }));
-vi.mock('./tweak-panel',()=>({TweakPanel:({label,fields,computed,used,onTweak,onAdd,canAdd,addReason}: {label:string;fields:NonNullable<Inspection>;computed:{color:string}|null;used:readonly string[];onTweak:(t:{field:'color';value:string})=>void;onAdd:()=>void;canAdd:boolean;addReason?:string})=><section data-testid="tweak-panel"><p>{label}</p><p data-testid="computed">{computed?.color??'none'}</p><p data-testid="used">{used.join(',')}</p><button onClick={()=>onTweak({field:'color',value:'#abcdef'})} disabled={!fields.color.editable}>Apply colour</button><button onClick={onAdd} disabled={!canAdd}>Add to chat</button><p>{addReason}</p></section>}));
+vi.mock('./tweak-panel',()=>({TweakPanel:({label,fields,computed,used,onTweak,onAdd,canAdd,addReason,isPending}: {isPending?:boolean;label:string;fields:NonNullable<Inspection>;computed:{color:string}|null;used:readonly string[];onTweak:(t:{field:'color';value:string})=>void;onAdd:()=>void;canAdd:boolean;addReason?:string})=><section data-testid="tweak-panel" data-pending={isPending?'yes':'no'}><p>{label}</p><p data-testid="computed">{computed?.color??'none'}</p><p data-testid="used">{used.join(',')}</p><button onClick={()=>onTweak({field:'color',value:'#abcdef'})} disabled={!fields.color.editable}>Apply colour</button><button onClick={onAdd} disabled={!canAdd}>Add to chat</button><p>{addReason}</p></section>}));
 
 const source:ScreenSource={kind:'html',entry:'index.html',files:{'index.html':'<b>Hi</b>'}};
 const drafts:Draft[]=[];
@@ -92,7 +93,7 @@ it('forwards tab changes and a custom title',()=>{
   const s=setup({tab:'tweak',title:'Home'});render(<HandEditPanel {...s.props}/>);expect(screen.getByText('Home')).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Code'}));expect(s.onTabChange).toHaveBeenCalledWith('code');
 });
 it('keeps the stopped-phase reload hint',()=>{
-  const s=setup({tab:'tweak'});vi.spyOn(s.live,'getState').mockReturnValue({phase:'stopped',screenId:'a',frameId:'frame',attempt:1} as never);render(<HandEditPanel {...s.props}/>);expect(screen.getByText('Reload the live screen to pick an element.')).toBeInTheDocument();
+  const s=setup({tab:'tweak'});vi.spyOn(s.live,'getState').mockReturnValue({phase:'stopped',screenId:'a',frameId:'frame',attempt:1} as never);render(<HandEditPanel {...s.props}/>);expect(screen.getByText('Reload the live screen to select an element.')).toBeInTheDocument();
 });
 describe('undo/redo shortcuts',()=>{
   function key(target:Element,init:KeyboardEventInit){fireEvent.keyDown(target,{key:'z',...init});}
@@ -185,4 +186,58 @@ describe('HandEditPanel interact',()=>{
   expect(button).toHaveAttribute('aria-pressed','true');
   fireEvent.click(button);expect(onToggle).toHaveBeenCalledOnce();
  });
+});
+
+describe('the Tweak body through an edit',()=>{
+  const inspected={color:{editable:true,value:'#000000'}} as Inspection;
+  const styled='<b style="color:#abcdef">Hi</b>';
+  const again=`index.html:0:${styled.length}`;
+  // Like the board: the pending reselect the panel asks for comes straight back as a prop.
+  function Harness({props,picked}:{props:HandEditPanelProps;picked:HandEditPanelProps['picked']}){
+    const [reselect,setReselect]=useState<string|null>(null);
+    return <HandEditPanel {...props} picked={picked} reselect={reselect} onReselect={(src)=>{props.onReselect?.(src);setReselect(src);}}/>;
+  }
+  async function tweaked(){
+    const onReselect=vi.fn();
+    const first={boardId:'a',src:'index.html:0:9',label:'Hi',epoch:1,revision:0,computed:null};
+    const s=setup({tab:'tweak',onReselect});
+    vi.mocked(s.compiler.inspect).mockResolvedValue(inspected);
+    vi.mocked(s.compiler.tweak).mockResolvedValue({ok:true,files:{'index.html':styled}});
+    const view=render(<Harness props={s.props} picked={first}/>);
+    await waitFor(()=>expect(screen.getByRole('button',{name:'Apply colour'})).toBeEnabled());
+    const body=screen.getByTestId('tweak-panel');
+    fireEvent.click(screen.getByRole('button',{name:'Apply colour'}));
+    await waitFor(()=>expect(s.live.previewDraft).toHaveBeenCalledWith('a',expect.anything(),1,'tweak'));
+    return {s,view,onReselect,body,first};
+  }
+  it('keeps the same body mounted (pending) until the element is read again',async()=>{
+    const {s,view,body}=await tweaked();
+    // Reselect pending: the old values stay, marked pending.
+    expect(screen.getByTestId('tweak-panel')).toBe(body);
+    expect(body).toHaveAttribute('data-pending','yes');
+    // The pick comes back; its inspection is still in flight.
+    let resolve!:(fields:Inspection)=>void;
+    vi.mocked(s.compiler.inspect).mockReturnValue(new Promise(r=>{resolve=r;}));
+    view.rerender(<Harness props={s.props} picked={{boardId:'a',src:again,label:'Hi',epoch:2,revision:1,computed:null}}/>);
+    expect(screen.getByTestId('tweak-panel')).toBe(body);
+    await act(async()=>resolve(inspected));
+    expect(screen.getByTestId('tweak-panel')).toBe(body);
+    expect(body).toHaveAttribute('data-pending','no');
+  });
+  it('Undo right after a tweak remaps the element that is about to be selected again',async()=>{
+    const {s,onReselect}=await tweaked();
+    expect(onReselect).toHaveBeenLastCalledWith(again);
+    onReselect.mockClear();
+    fireEvent.click(screen.getByRole('button',{name:'Undo'}));
+    expect(s.live.previewDraft).toHaveBeenLastCalledWith('a',source,2,'history');
+    expect(onReselect).toHaveBeenLastCalledWith('index.html:0:9');
+  });
+  it('disables the Tweak tab with its reason and never switches to it',()=>{
+    const s=setup({tab:'code',tweakDisabledReason:'Click something in the screen to tweak it'});
+    render(<HandEditPanel {...s.props}/>);
+    const tab=screen.getByRole('button',{name:'Tweak'});
+    expect(tab).toHaveAttribute('aria-disabled','true');
+    fireEvent.click(tab);
+    expect(s.onTabChange).not.toHaveBeenCalled();
+  });
 });

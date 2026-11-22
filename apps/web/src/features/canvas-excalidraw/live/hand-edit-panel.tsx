@@ -34,6 +34,10 @@ export type HandEditPanelProps = {
   onAddElement?: (chip: ElementChip) => void;
   // The element to select again once an edit has recompiled the frame; null drops it.
   onReselect?: (src: string | null) => void;
+  // The element an edit asked to select again, while that is still pending (null when none).
+  reselect?: string | null;
+  // Shown on the Tweak tab when it cannot be chosen (nothing selected, or not editable).
+  tweakDisabledReason?: string;
   name?: string;
   onClose: () => void;
   onTabChange: (tab: LivePanelTab) => void;
@@ -43,11 +47,14 @@ export type HandEditPanelProps = {
 
 // Fits the existing 280px LayoutPanel. Keep this component keyed by Draft,
 // never attempt, source revision or a converted board alias.
-export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, name, onClose, onTabChange, title = "Screen", interact }: HandEditPanelProps) {
+export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, readOnly, issues, identity, onAddElement, onReselect, reselect = null, tweakDisabledReason, name, onClose, onTabChange, title = "Screen", interact }: HandEditPanelProps) {
   const state = useSyncExternalStore(draft.subscribe, draft.getState, draft.getState);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   const selected = useRef<Selected | null>(null);
+  // The last inspection. It outlives an edit: while the edited element is selected again and read
+  // again, the panel keeps showing it (pending) so the body never unmounts and focus stays put.
   const [inspected, setInspected] = useState<{ selected: Selected; fields: NonNullable<Inspection> } | null>(null);
+  const [carry, setCarry] = useState(false);
   const [codeOpened, setCodeOpened] = useState(tab === "code");
   const [busy, setBusy] = useState(false);
   const mounted = useRef(true);
@@ -57,13 +64,13 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
 
   const invalidate = useCallback(() => {
     selected.current = null;
-    setInspected(null);
   }, []);
   useEffect(() => {
     let previous = live.getState();
     return live.subscribe(() => {
       const next = live.getState();
       if (next.attempt !== previous.attempt || next.phase === "asleep" || next.phase === "stopped") invalidate();
+      if (next.phase === "asleep" || next.phase === "stopped") setCarry(false);
       previous = next;
     });
   }, [live, invalidate]);
@@ -76,6 +83,7 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
       if (!cancelled && selected.current === capture) {
         if (fields) setInspected({ selected: capture, fields });
         else { selected.current = null; setInspected(null); }
+        setCarry(false);
       }
     });
     return () => { cancelled = true; if (selected.current === capture) selected.current = null; };
@@ -87,21 +95,24 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
   // drive preview, and therefore cannot reset the editor or compile twice.
   // A tweak keeps its selection itself; undo and redo pass the element's place in the new source
   // as `reselect`; a code edit (or a reload) drops it.
-  function preview(source: ScreenSource, revision: number, origin: "code" | "tweak" | "history", reselect: string | null = null) {
+  function preview(source: ScreenSource, revision: number, origin: "code" | "tweak" | "history", again: string | null = null) {
     invalidate();
-    if (origin !== "tweak") onReselect?.(reselect);
+    // A tweak, or Undo/Redo that found the element again, keeps showing the last values until it is back.
+    setCarry(origin === "tweak" || again !== null);
+    if (origin !== "tweak") onReselect?.(again);
     live.previewDraft(boardId, source, revision, origin);
   }
   function edit(origin: "code" | "history", change: () => void) {
     if (readOnly) return;
     const before = draft.getState();
-    const capture = selected.current;
+    // Right after a tweak the element is not selected yet, only about to be: remap that one.
+    const capture = selected.current?.src ?? reselect;
     change();
     const after = draft.getState();
     if (after.revision === before.revision) return;
     // Undo and redo can change anything in the file: find the element again in the new text.
-    const reselect = origin === "history" && capture ? remapTag(before.source.files, after.source.files, capture.src) : null;
-    preview(after.source, after.revision, origin, reselect);
+    const again = origin === "history" && capture ? remapTag(before.source.files, after.source.files, capture) : null;
+    preview(after.source, after.revision, origin, again);
   }
   function tweak(value: Tweak) {
     const capture = selected.current;
@@ -128,7 +139,11 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     } finally { if (mounted.current) setBusy(false); }
   }
   const valid = inspected && inspected.selected === picked && inspected.selected.revision === state.revision ? inspected : null;
-  const addReason = !onAddElement ? "Add to chat will be available when chat is connected." : readOnly ? "Editing access is required to add an element." : !valid ? "Pick an element first." : !identity?.() ? "Save this screen before adding an element." : state.status === "conflict" || state.status === "error" ? "Save this screen before adding an element." : undefined;
+  // A pick for the source on screen whose inspection has not come back yet.
+  const pickedFresh = !!picked && picked.boardId === boardId && picked.revision === state.revision;
+  const shown = valid ?? (carry && inspected && (reselect !== null || pickedFresh) ? inspected : null);
+  // The Tweak body only renders for a selected element on an editable screen (see below).
+  const addReason = !onAddElement ? "Add to chat will be available when chat is connected." : !identity?.() || state.status === "conflict" || state.status === "error" ? "Save this screen before adding an element." : undefined;
   // Once Code is opened, retain its host while switching tabs or aliases.
   const showCode = tab === "code" || codeOpened;
   const codeLoaded = useCallback(() => setCodeOpened(true), []);
@@ -146,21 +161,21 @@ export function HandEditPanel({ draft, boardId, tab, compiler, live, picked, rea
     event.stopPropagation();
     if (event.shiftKey) { if (canRedo) redo(); } else if (canUndo) undo();
   }
-  const computed = valid?.selected.computed ?? null;
+  const computed = shown?.selected.computed ?? null;
   const used = useMemo(
-    () => (valid ? usedColours(state.source.files, [computed?.color, computed?.backgroundColor].map(css => (css ? rgbToHex(css) : null)).filter((hex): hex is string => !!hex)) : []),
-    [valid, computed, state.source.files],
+    () => (shown ? usedColours(state.source.files, [computed?.color, computed?.backgroundColor].map(css => (css ? rgbToHex(css) : null)).filter((hex): hex is string => !!hex)) : []),
+    [shown, computed, state.source.files],
   );
   return (
-    <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }} interact={interact} onKeyDown={onKeyDown}>
+    <LivePanel title={title} tab={tab} onTabChange={onTabChange} onClose={onClose} history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }} interact={interact} onKeyDown={onKeyDown} disabledTabs={tweakDisabledReason ? { tweak: tweakDisabledReason } : undefined}>
       <VStack gap={3}>
         {readOnly ? <Banner status="info" title="Read-only screen" description="You can read, copy and download the source." /> : null}
         {state.status === "error" ? <Banner status="error" title="This screen could not be saved" endContent={<Button label="Retry" size="sm" isDisabled={readOnly} clickAction={() => draft.retry()} />} /> : null}
         {state.status === "conflict" ? <Banner status="warning" title="This screen changed elsewhere" description="Reload the latest version to continue." endContent={<Button label="Reload latest" size="sm" isDisabled={readOnly} isLoading={busy} onClick={() => { void reload(); }} />} /> : null}
         {issues.length && tab === "tweak" ? <List density="compact" header={<Text type="label">Preview problems</Text>}>{issues.map((issue, index) => <ListItem key={`${index}-${issue.message}`} label={issue.message} description={issue.file || undefined} />)}</List> : null}
-        {tab === "tweak" && valid && !readOnly ? <TweakPanel label={valid.selected.label} fields={valid.fields} computed={computed} used={used} onTweak={tweak} onAdd={() => { const capture = selected.current; if (capture && !readOnly && identity) void addPickedElement(draft, capture, () => selected.current, identity, onAddElement); }} canAdd={!addReason} addReason={addReason} /> : null}
+        {tab === "tweak" && shown && !readOnly ? <TweakPanel label={shown.selected.label} fields={shown.fields} computed={computed} used={used} isPending={shown !== valid} onTweak={tweak} onAdd={() => { const capture = selected.current; if (capture && identity) void addPickedElement(draft, capture, () => selected.current, identity, onAddElement); }} canAdd={!addReason && shown === valid} addReason={addReason} /> : null}
         {showCode ? <VStack hidden={tab !== "code"} style={tab === "code" ? undefined : { display: "none" }} gap={0}><Suspense fallback={<Text type="supporting">Loading code editor…</Text>}><EditorHost onReady={codeLoaded}><CodeEditor source={state.source} issues={[...issues]} readOnly={readOnly} onChange={files => edit("code", () => draft.replace(files))} onUndo={undo} onRedo={redo} name={name} dark={pageIsDark()} /></EditorHost></Suspense></VStack> : null}
-        {liveState.phase === "stopped" ? <Text type="supporting">Reload the live screen to pick an element.</Text> : null}
+        {liveState.phase === "stopped" ? <Text type="supporting">Reload the live screen to select an element.</Text> : null}
       </VStack>
     </LivePanel>
   );

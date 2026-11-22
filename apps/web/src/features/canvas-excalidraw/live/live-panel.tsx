@@ -11,6 +11,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
 import { ToggleButton } from "@astryxdesign/core/ToggleButton";
+import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { VStack } from "@astryxdesign/core/VStack";
 import { MousePointerClick, Redo2, Undo2 } from "lucide-react";
 import type { ScreenSource } from "@meld/screen-runtime/source";
@@ -24,7 +25,7 @@ export type LivePanelHistory = { canUndo: boolean; canRedo: boolean; onUndo: () 
 
 export type LivePanelInteract = { pressed: boolean; onToggle: () => void };
 
-export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, history, interact, onKeyDown, children }: {
+export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, history, interact, onKeyDown, disabledTabs, children }: {
   title: string;
   tab: LivePanelTab;
   onTabChange: (tab: LivePanelTab) => void;
@@ -34,6 +35,8 @@ export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_
   // Interact hands clicks to the awake screen instead of selecting inside it.
   interact?: LivePanelInteract;
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+  // Tabs that cannot be chosen right now, with the reason shown as their tooltip.
+  disabledTabs?: Partial<Record<LivePanelTab, string>>;
   children: ReactNode;
 }) {
   return (
@@ -55,8 +58,15 @@ export function LivePanel({ title, tab, onTabChange, onClose, tabs = LIVE_PANEL_
           </HStack>
         </HStack>
         {tabs.length > 1 ? (
-          <TabList value={tab} onChange={(value) => onTabChange(value as LivePanelTab)} size="sm" hasDivider>
-            {tabs.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}
+          <TabList value={tab} onChange={(value) => { if (!disabledTabs?.[value as LivePanelTab]) onTabChange(value as LivePanelTab); }} size="sm" hasDivider>
+            {tabs.map((item) => {
+              const reason = item.value === tab ? undefined : disabledTabs?.[item.value];
+              return reason ? (
+                <Tooltip key={item.value} content={reason}>
+                  <Tab value={item.value} label={item.label} aria-disabled="true" />
+                </Tooltip>
+              ) : <Tab key={item.value} value={item.value} label={item.label} />;
+            })}
           </TabList>
         ) : null}
         {children}

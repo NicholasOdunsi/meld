@@ -25,14 +25,14 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 // The real hand-editing and live controller around a fake frame; only the
 // compiler and persistence are stubbed.
-async function setup() {
+async function setup(access: "edit" | "view" = "edit") {
   actions.read.mockResolvedValue({ status: "ok", screen: { legacy: false, screenId: id.slice(3), versionId: "v1", formFactor: "mobile", source, links: [] } });
   actions.save.mockResolvedValue({ status: "saved", versionId: "v2" });
   const compiler = {
     compile: vi.fn(async () => ({ ok: true as const, screen: { kind: "html" as const, html: "<button>Start</button>", scripts: [], styles: [], links: [] } })),
     inspect: vi.fn(), tweak: vi.fn(), links: vi.fn(async () => []), dispose: vi.fn(),
   };
-  const editing = createHandEditing({ roomId: "room", access: "edit", store: createScreenStore(), compiler, api: () => null, runtimeBundle: async () => "", loadLegacy: async () => null });
+  const editing = createHandEditing({ roomId: "room", access, store: createScreenStore(), compiler, api: () => null, runtimeBundle: async () => "", loadLegacy: async () => null });
   const view = renderHook(() => useInspectorPanel(editing));
   const frame = { postMessage: vi.fn() };
   const send = (data: object) => act(() => { editing.live.handleMessage({ source: frame, data: { source: "orion-frame", ...data } }); });
@@ -153,5 +153,87 @@ describe("useInspectorPanel", () => {
     await act(async () => { await editing.live.wake(id); });
     expect(view.result.current).toMatchObject({ visible: true, panelOpen: true, panelTab: "code" });
     editing.live.dispose();editing.drafts.get(id)?.dispose();
+  });
+
+  it("opens Code after waking a read-only screen, with Tweak disabled", async () => {
+    const s = await setup("view");
+    expect(s.editing.live.isPicking()).toBe(false);
+    act(() => s.view.result.current.afterWake("tweak"));
+    expect(s.view.result.current).toMatchObject({ visible: true, panelOpen: true, panelTab: "code" });
+    expect(s.view.result.current.tweakDisabled).toMatch(/can't be edited/);
+    act(() => s.view.result.current.onTabChange("tweak"));
+    expect(s.view.result.current).toMatchObject({ visible: true, panelTab: "code" });
+    s.cleanupAll();
+  });
+
+  it("opens nothing after waking an editable screen on Tweak, and Code when asked", async () => {
+    const s = await setup();
+    act(() => s.view.result.current.afterWake("tweak"));
+    expect(s.view.result.current.visible).toBe(false);
+    act(() => s.view.result.current.afterWake("code"));
+    expect(s.view.result.current).toMatchObject({ visible: true, panelTab: "code" });
+    s.cleanupAll();
+  });
+
+  it("disables the Tweak tab with nothing selected instead of closing the panel", async () => {
+    const s = await setup();
+    act(() => s.view.result.current.showCode());
+    expect(s.view.result.current.tweakDisabled).toBe("Click something in the screen to tweak it");
+    act(() => s.view.result.current.onTabChange("tweak"));
+    expect(s.view.result.current).toMatchObject({ visible: true, panelOpen: true, panelTab: "code" });
+    s.pick();
+    expect(s.view.result.current.tweakDisabled).toBeUndefined();
+    act(() => s.view.result.current.onTabChange("code"));
+    act(() => s.view.result.current.onTabChange("tweak"));
+    expect(s.view.result.current).toMatchObject({ visible: true, panelTab: "tweak" });
+    s.cleanupAll();
+  });
+
+  it("treats an element about to be selected again as selected: Escape clears it and does not sleep", async () => {
+    const s = await setup();
+    s.pick();
+    // What a tweak does: the source moves on and the element waits to be selected again.
+    act(() => { s.editing.setReselect("index.html:0:30"); s.draft.replace({ "index.html": "<button>Start!</button>" }); });
+    expect(s.editing.getValidPick()).toBeNull();
+    expect(s.view.result.current.visible).toBe(true);
+    s.escape();
+    expect(s.editing.hasReselect()).toBe(false);
+    expect(s.view.result.current.visible).toBe(false);
+    expect(s.editing.live.getState().phase).not.toBe("asleep");
+    s.cleanupAll();
+  });
+
+  it("the frame's Escape during a pending reselect clears it instead of sleeping", async () => {
+    const s = await setup();
+    s.pick();
+    act(() => { s.editing.setReselect("index.html:0:30"); s.draft.replace({ "index.html": "<button>Start!</button>" }); });
+    s.send({ type: "escape" });
+    expect(s.editing.hasReselect()).toBe(false);
+    expect(s.editing.live.getState().phase).not.toBe("asleep");
+    s.cleanupAll();
+  });
+
+  it("Escape leaves Interact first (screen stays awake, selecting comes back), then sleeps", async () => {
+    const s = await setup();
+    act(() => s.view.result.current.toggleInteract());
+    expect(s.editing.live.isPicking()).toBe(false);
+    s.escape();
+    expect(s.view.result.current.interact).toBe(false);
+    expect(s.editing.live.isPicking()).toBe(true);
+    expect(s.editing.live.getState().phase).toBe("running");
+    s.escape();
+    await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
+    s.cleanupAll();
+  });
+
+  it("the frame's Escape (the screen has the keyboard while interacting) also leaves Interact first", async () => {
+    const s = await setup();
+    act(() => s.view.result.current.toggleInteract());
+    s.send({ type: "escape" });
+    expect(s.view.result.current.interact).toBe(false);
+    expect(s.editing.live.getState().phase).toBe("running");
+    s.send({ type: "escape" });
+    await waitFor(() => expect(s.editing.live.getState().phase).toBe("asleep"));
+    s.cleanupAll();
   });
 });

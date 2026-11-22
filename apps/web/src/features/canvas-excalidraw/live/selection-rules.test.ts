@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from "vitest";
-import { escapeAction, isInsidePopup, isValidPick, shouldEnableSelectMode, shouldShowLivePanel, syncSelectMode } from "./selection-rules";
+import { escapeAction, isInsidePopup, isValidPick, opensCodeOnWake, shouldEnableSelectMode, shouldShowLivePanel, showInteractChip, syncSelectMode, tweakDisabledReason } from "./selection-rules";
 
 describe("shouldEnableSelectMode", () => {
   const base = { phase: "running" as const, hasDraft: true, canEdit: true, interact: false };
@@ -117,5 +117,43 @@ describe("syncSelectMode", () => {
     syncSelectMode(live, false, take);
     expect(take).not.toHaveBeenCalled();
     expect(live.selectElement).not.toHaveBeenCalled();
+  });
+});
+
+describe("escapeAction in Interact", () => {
+  it("leaves Interact first, never sleeping; a popup still only closes itself", () => {
+    expect(escapeAction({ hasPick: false, targetInsidePopup: false, interact: true })).toBe("exit-interact");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: true, interact: true })).toBe("ignore");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: false, interact: false })).toBe("sleep");
+  });
+});
+
+describe("opensCodeOnWake", () => {
+  it("opens Code when asked, on a compile failure, or when the screen can't be edited", () => {
+    expect(opensCodeOnWake({ phase: "running", tab: "tweak", editable: true })).toBe(false);
+    expect(opensCodeOnWake({ phase: "running", tab: "code", editable: true })).toBe(true);
+    expect(opensCodeOnWake({ phase: "compile-failed", tab: "tweak", editable: true })).toBe(true);
+    expect(opensCodeOnWake({ phase: "running", tab: "tweak", editable: false })).toBe(true);
+    expect(opensCodeOnWake({ phase: "asleep", tab: "code", editable: false })).toBe(false);
+  });
+});
+
+describe("tweakDisabledReason", () => {
+  it("disables Tweak with nothing selected or nothing editable", () => {
+    expect(tweakDisabledReason({ editable: true, hasPick: false, reselecting: false })).toBe("Click something in the screen to tweak it");
+    expect(tweakDisabledReason({ editable: true, hasPick: true, reselecting: false })).toBeUndefined();
+    expect(tweakDisabledReason({ editable: true, hasPick: false, reselecting: true })).toBeUndefined();
+    expect(tweakDisabledReason({ editable: false, hasPick: true, reselecting: false })).toMatch(/can't be edited/);
+  });
+});
+
+describe("showInteractChip", () => {
+  it("shows only while Interact is on for an awake, editable screen whose frame is not selected", () => {
+    const on = { phase: "running" as const, editable: true, interact: true, frameSelected: false };
+    expect(showInteractChip(on)).toBe(true);
+    expect(showInteractChip({ ...on, interact: false })).toBe(false);
+    expect(showInteractChip({ ...on, frameSelected: true })).toBe(false);
+    expect(showInteractChip({ ...on, editable: false })).toBe(false);
+    expect(showInteractChip({ ...on, phase: "asleep" })).toBe(false);
   });
 });

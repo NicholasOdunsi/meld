@@ -41,6 +41,7 @@ import "./chrome/orion-board.css";
 import { CanvasDock } from "./chrome/canvas-dock";
 import { SelectionPill, type ScreenAction } from "./chrome/selection-pill";
 import { ShapePanel } from "./chrome/shape-panel";
+import { InteractChip } from "./chrome/interact-chip";
 import { applicableControls, patchFor, readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
 import { activeToolFor, dockToolForActive, type DockTool } from "./chrome/tools";
@@ -57,6 +58,7 @@ import { isInsideScreen, screenFrameAt } from "./live/live-hit";
 import { LiveCodeView, LivePanel, type LivePanelTab } from "./live/live-panel";
 import { isAwake, liveIssues, liveSourceOf } from "./live/live-state";
 import { useInspectorPanel } from "./live/use-inspector-panel";
+import { showInteractChip } from "./live/selection-rules";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
 import { createScreenCompiler } from "./live/screen-compiler";
@@ -114,7 +116,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   }),[access,api,compiler,roomId,store]);
   const live=editing.live;
   const clearActiveEmbeddable=useCallback(()=>{apiRef.current?.updateScene({ appState: { activeEmbeddable: null } });},[]);
-  const { liveState, panelTab, interact, visible: panelVisible, showCode, onTabChange, close: closePanel, toggleInteract } = useInspectorPanel(editing, clearActiveEmbeddable);
+  const { liveState, panelTab, interact, visible: panelVisible, tweakDisabled, showCode, afterWake, onTabChange, close: closePanel, toggleInteract } = useInspectorPanel(editing, clearActiveEmbeddable);
   const draftStatuses=useSyncExternalStore(editing.drafts.subscribe,editing.drafts.getSnapshot,editing.drafts.getSnapshot);
   useEffect(()=>{
     compilerLease.retain();editing.retain();
@@ -124,9 +126,10 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     const attempt=await live.wake(id,undefined,frameId),current=live.getState();
     if(current.phase==="asleep" || current.attempt!==attempt || current.frameId!==frameId)return;
     if(current.screenId!==id && (!editing.drafts.get(id) || editing.drafts.get(id)!==editing.drafts.get(current.screenId)))return;
-    // Waking never opens the panel: it appears when something is picked, or when Code is asked for.
-    if(current.phase==="compile-failed" || tab==="code")showCode();
-  },[editing,live,showCode]);
+    // Waking opens no panel for an editable screen: it appears when something is selected, or Code is asked for.
+    // A screen that can't be edited (read-only, or no editable source) opens Code: there is nothing to select.
+    afterWake(tab);
+  },[afterWake,editing,live]);
   // A copied embeddable shares its source. Only the requested copy runs it.
   const liveFrameId = liveState.phase === "asleep" ? undefined : liveState.frameId
     ?? api?.getSceneElements().find((element) => element.type === "embeddable" && screenIdFromLink(element.link) === liveState.screenId)?.id;
@@ -513,6 +516,10 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 shapeActions={shapeActionsFor?.(selection)}
               />
             ) : null}
+            {api && liveFrameId && showInteractChip({ phase: liveState.phase, editable: liveEditable && access === "edit", interact, frameSelected: selection?.ids[0] === liveFrameId }) ? (() => {
+              const frame = api.getSceneElements().find((element) => element.id === liveFrameId);
+              return frame ? <InteractChip bounds={{ x: frame.x, y: frame.y, width: frame.width, height: frame.height }} view={view} onToggle={toggleInteract} /> : null;
+            })() : null}
             {api ? (
               <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />
             ) : null}
@@ -536,10 +543,12 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               issues={editing.issues(liveDraft)}
               identity={()=>editing.identity(liveDraft)}
               onReselect={editing.setReselect}
+              reselect={editing.getReselect()}
+              tweakDisabledReason={tweakDisabled}
               onClose={closePanel} onTabChange={onTabChange}
               interact={liveEditable ? { pressed: interact, onToggle: toggleInteract } : undefined} />
           ) : (
-            <LivePanel title="Screen" tab={panelTab} onTabChange={onTabChange} onClose={closePanel}>
+            <LivePanel title="Screen" tab={panelTab} onTabChange={onTabChange} onClose={closePanel} disabledTabs={tweakDisabled ? { tweak: tweakDisabled } : undefined}>
               <LiveCodeView source={liveSourceOf(liveState)} issues={liveIssues(liveState)} />
             </LivePanel>
           )

@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { createHandEditing } from "./hand-editing";
 import type { LivePanelTab } from "./live-panel";
-import { escapeAction, isInsidePopup, shouldShowLivePanel } from "./selection-rules";
+import { escapeAction, isInsidePopup, opensCodeOnWake, shouldShowLivePanel, tweakDisabledReason } from "./selection-rules";
 import { useSelectMode } from "./use-select-mode";
 
 type HandEditing = ReturnType<typeof createHandEditing>;
@@ -17,11 +17,28 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
   const [panelTab, setPanelTab] = useState<LivePanelTab>("code");
   // Interact hands clicks to the awake screen instead of selecting inside it.
   const [interact, setInteract] = useState(false);
+  const interactRef = useRef(interact);
+  useEffect(() => { interactRef.current = interact; }, [interact]);
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);
   useSyncExternalStore(editing.subscribe, editing.getSnapshot, editing.getSnapshot);
 
   const showCode = useCallback(() => { setPanelTab("code"); setPanelOpen(true); }, []);
-  const onTabChange = useCallback((tab: LivePanelTab) => { setPanelTab(tab); setPanelOpen(tab === "code"); }, []);
+  const editableNow = useCallback(() => {
+    const state = live.getState();
+    const draft = state.phase === "asleep" ? undefined : editing.drafts.get(state.screenId);
+    return !!draft && editing.canEdit(draft);
+  }, [editing, live]);
+  const tweakReason = useCallback(() => tweakDisabledReason({ editable: editableNow(), hasPick: editing.getValidPick() !== null, reselecting: editing.hasReselect() }), [editableNow, editing]);
+  // Tweak with nothing selected would have nothing to show: the tab is disabled then, never a silent close.
+  const onTabChange = useCallback((tab: LivePanelTab) => {
+    if (tab === "tweak" && tweakReason()) return;
+    setPanelTab(tab);
+    setPanelOpen(tab === "code");
+  }, [tweakReason]);
+  // After a wake: Code when asked for, on a compile failure, or when the screen can't be edited.
+  const afterWake = useCallback((tab: LivePanelTab) => {
+    if (opensCodeOnWake({ phase: live.getState().phase, tab, editable: editableNow() })) showCode();
+  }, [editableNow, live, showCode]);
   const clearSelection = useCallback(() => {
     editing.setReselect(null);
     editing.clearPicked();
@@ -33,14 +50,21 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
     setInteract(next);
     if (next) clearSelection();
   }, [clearSelection, interact]);
+  // Escape from inside the screen (it has the keyboard while interacting) leaves Interact first.
+  useEffect(() => {
+    if (!interact) return;
+    editing.setEscapeFirst(() => { setInteract(false); return true; });
+    return () => editing.setEscapeFirst(null);
+  }, [editing, interact]);
 
   useEffect(() => {
     // Capture phase, and no defaultPrevented check: Excalidraw handles Escape
     // itself and may stop or prevent it before a bubbling listener runs.
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || live.getState().phase === "asleep") return;
-      const action = escapeAction({ hasPick: editing.getValidPick() !== null, targetInsidePopup: isInsidePopup(event.target) });
-      if (action === "clear-selection") clearSelection();
+      const action = escapeAction({ hasPick: editing.getValidPick() !== null || editing.hasReselect(), targetInsidePopup: isInsidePopup(event.target), interact: interactRef.current });
+      if (action === "exit-interact") setInteract(false);
+      else if (action === "clear-selection") clearSelection();
       else if (action === "sleep") void live.sleep();
     };
     const screenOf = () => { const state = live.getState(); return state.phase === "asleep" ? null : state.screenId; };
@@ -76,5 +100,6 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
   useSelectMode(live, editing, interact);
 
   const visible = shouldShowLivePanel({ panelOpen, validPicked: editing.getValidPick() !== null, phase: liveState.phase, reselecting: editing.hasReselect() });
-  return { liveState, panelOpen, panelTab, interact, visible, showCode, onTabChange, close, toggleInteract };
+  const tweakDisabled = liveState.phase === "asleep" ? undefined : tweakReason();
+  return { liveState, panelOpen, panelTab, interact, visible, tweakDisabled, showCode, afterWake, onTabChange, close, toggleInteract };
 }

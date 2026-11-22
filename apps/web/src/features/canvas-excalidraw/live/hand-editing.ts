@@ -58,7 +58,9 @@ export function createHandEditing(deps: {
     // The element an edit just changed, to select again once the frame reloads.
     // `sent` once the frame was asked, until its pick comes back (or it never does).
     reselect: { src: string; screenId: string; sent: boolean } | null = null,
-    reselectTimer: ReturnType<typeof setTimeout> | undefined;
+    reselectTimer: ReturnType<typeof setTimeout> | undefined,
+    // Asked first when the frame reports Escape (the board leaves Interact there).
+    escapeFirst: (() => boolean) | null = null;
   const diagnostics = new Map<
     Draft,
     { revision: number; issues: CompileError[] }
@@ -236,8 +238,12 @@ export function createHandEditing(deps: {
       setReselect(null);
       clearPicked();
     },
+    // An element about to be selected again after an edit counts as selected: Escape clears it
+    // instead of putting the screen to sleep while the panel still shows it.
     onEscape: () => {
-      if (!validPick()) return false;
+      if (escapeFirst?.()) return true;
+      if (!validPick() && reselect === null) return false;
+      setReselect(null);
       clearPicked();
       live.clearSelection();
       return true;
@@ -317,6 +323,10 @@ export function createHandEditing(deps: {
     // Remember the element to select again once the recompiled frame is ready.
     setReselect,
     hasReselect: () => reselect !== null,
+    // The element source an edit is waiting to select again, or null.
+    getReselect: () => reselect?.src ?? null,
+    // A handler that may take the frame's Escape before selection and sleep do (true = taken).
+    setEscapeFirst(handler: (() => boolean) | null) { escapeFirst = handler; },
     // The element to select again, once. Until its pick arrives the panel stays
     // up, so an edit never makes it blink away and back.
     takeReselect() {
