@@ -89,3 +89,11 @@ it("draws swatches through the board's dark canvas filter only when asked", () =
   open({ value: "#1e1e1e" });
   for (const circle of document.querySelectorAll<SVGCircleElement>("circle[data-swatch]")) expect(circle.style.filter).toBe("");
 });
+it("names the trigger by its label and describes the current colour", () => {
+  render(<ColourField label="Background colour" value="#123456" used={[]} onChange={vi.fn()} />);
+  const trigger = screen.getByRole("button", { name: "Background colour" });
+  expect(trigger).toHaveAccessibleDescription("Current colour #123456");
+  cleanup();
+  render(<ColourField label="Fill" value={null} used={[]} onChange={vi.fn()} onClear={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Fill" })).toHaveAccessibleDescription("No colour");
+});

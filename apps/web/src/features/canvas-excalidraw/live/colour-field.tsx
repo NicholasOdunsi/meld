@@ -183,7 +183,8 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
       isEnabled={!isDisabled}
       label={label}
     >
-      <Button label={label} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
+      {/* The name stays the field label; the current colour is read out as its description. */}
+      <Button label={label} aria-description={value ? `Current colour ${value}` : "No colour"} variant="secondary" size="sm" isDisabled={isDisabled} icon={<Swatch hex={value} filtered={canvasFilter} />}>
         {value ?? "None"}
       </Button>
     </Popover>
