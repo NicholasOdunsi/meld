@@ -13,6 +13,10 @@ export const INSPECTOR_CLASS = "orion-inspector";
 // The same numbers feed the CSS variables below, so the sheet and the placement maths agree.
 export const PILL_LAYOUT = { gap: 12, margin: 12, leftInset: 76, bottomInset: 60 } as const;
 
+// The dropdown list opened from a field (pixels): its tallest size, and its gap to the field. The same
+// numbers feed the CSS variables below and the placement maths (when to open upward), so they cannot drift.
+export const MENU_LAYOUT = { maxHeight: 240, gap: 4 } as const;
+
 export const INSPECTOR_VARS = {
   // The floating surface shared by the pill and the dock.
   "--orion-i-surface": "#262626",
@@ -72,7 +76,8 @@ export const INSPECTOR_VARS = {
   "--orion-i-menu-radius": "12px",
   "--orion-i-menu-pad": "4px",
   "--orion-i-menu-item-h": "30px",
-  "--orion-i-menu-max-h": "240px",
+  "--orion-i-menu-max-h": `${MENU_LAYOUT.maxHeight}px`,
+  "--orion-i-menu-gap": `${MENU_LAYOUT.gap}px`,
   "--orion-i-menu-z": "2147483000",
 } as const;
 
@@ -104,8 +109,11 @@ export const INSPECTOR_CSS = `
 .orion-i-section__toggle svg{transition:transform 120ms}
 .orion-i-section__toggle[aria-expanded="false"] svg{transform:rotate(-90deg)}
 .orion-i-section__body[hidden]{display:none}
-.orion-i-row{display:flex;gap:var(--orion-i-row-gap);margin-bottom:var(--orion-i-row-gap)}
-.orion-i-cell{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.orion-i-row{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:var(--orion-i-row-gap);margin-bottom:var(--orion-i-row-gap)}
+.orion-i-row>*{min-width:0}
+.orion-i-row>:has(>.orion-i-field){display:flex;width:100%}
+.orion-i-cell{display:flex;flex-direction:column;gap:4px}
+.orion-i-cell>.orion-i-field{flex:none}
 .orion-i-field{position:relative;box-sizing:border-box;flex:1;min-width:0;height:var(--orion-i-field-h);display:flex;align-items:center;gap:var(--orion-i-field-gap);padding:var(--orion-i-field-pad);border-radius:var(--orion-i-field-radius);background:var(--orion-i-field-bg);color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size)}
 .orion-i-field:focus-within{outline:2px solid var(--orion-i-focus);outline-offset:0}
 .orion-i-field[data-invalid]{outline:1px solid var(--orion-i-error)}
@@ -124,6 +132,7 @@ export const INSPECTOR_CSS = `
 .orion-i-swatch[data-empty]{border-style:dashed}
 .orion-i-note,.orion-i-error{margin:0;font-size:var(--orion-i-field-small);color:var(--orion-i-field-muted)}
 .orion-i-error{color:var(--orion-i-error)}
+.orion-i-menu:not([data-placed]){opacity:0}
 .orion-i-menu{position:fixed;z-index:var(--orion-i-menu-z);box-sizing:border-box;margin:0;padding:var(--orion-i-menu-pad);list-style:none;overflow:auto;max-height:var(--orion-i-menu-max-h);border-radius:var(--orion-i-menu-radius);background:var(--orion-i-surface);border:var(--orion-i-border);box-shadow:var(--orion-i-shadow);color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size);outline:0}
 .orion-i-menu__item{display:flex;align-items:center;height:var(--orion-i-menu-item-h);padding:var(--orion-i-field-pad);border-radius:var(--orion-i-field-radius);cursor:pointer;white-space:nowrap}
 .orion-i-menu__item[data-active]{background:var(--orion-i-btn-hover)}

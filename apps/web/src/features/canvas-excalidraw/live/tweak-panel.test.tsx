@@ -204,6 +204,18 @@ it("ignores colour and dropdown changes while pending, and dims the body", () =>
   expect(onTweak).not.toHaveBeenCalled();
 });
 
+it("marks the Tweak body pending (dimmed through the theme, busy for assistive tech) only while pending", () => {
+  const { container } = render(<TweakPanel label="A" fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} isPending />);
+  const body = container.querySelector(".orion-i-body")!;
+  expect(body).toHaveAttribute("data-pending", "true");
+  expect(body).toHaveAttribute("aria-busy", "true");
+  expect(body).not.toHaveAttribute("style");
+  cleanup();
+  const idle = render(<TweakPanel label="A" fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} />);
+  expect(idle.container.querySelector(".orion-i-body")).not.toHaveAttribute("data-pending");
+  expect(idle.container.querySelector(".orion-i-body")).not.toHaveAttribute("aria-busy");
+});
+
 it("steps a number with the arrow keys and commits each step once", () => {
   const { onTweak } = setup({ fields: fields({ fontSize: { value: "16" } }), computed: { ...COMPUTED, fontSize: "16" } });
   const size = number("Size");

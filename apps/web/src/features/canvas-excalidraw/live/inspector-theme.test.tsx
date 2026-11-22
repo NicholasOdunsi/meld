@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { cleanup, render } from "@testing-library/react";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
-import { INSPECTOR_CLASS, INSPECTOR_CSS, INSPECTOR_VARS, InspectorThemeStyle } from "./inspector-theme";
+import { INSPECTOR_CLASS, MENU_LAYOUT, INSPECTOR_CSS, INSPECTOR_VARS, InspectorThemeStyle } from "./inspector-theme";
 
 afterEach(cleanup);
 
@@ -40,6 +40,10 @@ describe("inspector theme", () => {
     for (const rule of rules) expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b/i);
     // The dropdown list is portalled to <body>, so it carries the scope class that gets the variables.
     expect(INSPECTOR_CSS).toContain(".orion-i-scope,");
+  });
+  it("feeds the dropdown's size and gap from one place, for the sheet and the placement maths", () => {
+    expect(INSPECTOR_VARS["--orion-i-menu-max-h"]).toBe(`${MENU_LAYOUT.maxHeight}px`);
+    expect(INSPECTOR_VARS["--orion-i-menu-gap"]).toBe(`${MENU_LAYOUT.gap}px`);
   });
   it("renders one style element, the same on the server and the client", () => {
     const { container } = render(<InspectorThemeStyle />);

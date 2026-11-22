@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Type } from "lucide-react";
 import { AutoIcon, ColourRow, SelectField, Section, TextField } from "./inspector-ui";
+import { INSPECTOR_CSS } from "./inspector-theme";
 import { escapeAction, isInsidePopup } from "./selection-rules";
 afterEach(cleanup);
 
@@ -112,6 +113,31 @@ describe("SelectField", () => {
     fireEvent.keyDown(trigger, { key: "Enter" });
     expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
+  it("moves focus into the list when it opens, while the list can take focus (never visibility:hidden)", () => {
+    const focused: { role: string | null; visibility: string; display: string }[] = [];
+    const original = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function focus(this: HTMLElement, ...args: Parameters<HTMLElement["focus"]>) {
+      const style = getComputedStyle(this);
+      focused.push({ role: this.getAttribute("role"), visibility: style.visibility, display: style.display });
+      return original.apply(this, args);
+    };
+    try {
+      const { trigger } = setup();
+      fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    } finally {
+      HTMLElement.prototype.focus = original;
+    }
+    const onList = focused.filter((call) => call.role === "listbox");
+    expect(onList.length).toBeGreaterThan(0);
+    for (const call of onList) {
+      expect(call.visibility).not.toBe("hidden");
+      expect(call.display).not.toBe("none");
+    }
+    expect(document.activeElement).toBe(screen.getByRole("listbox"));
+    // The unplaced list hides with opacity only, from the theme's rule (a stylesheet rule, so not visibility).
+    expect(INSPECTOR_CSS).toMatch(/\.orion-i-menu:not\(\[data-placed\]\)\{opacity:0\}/);
+    expect(INSPECTOR_CSS).not.toMatch(/\.orion-i-menu[^{]*\{[^}]*visibility:hidden/);
+  });
   it("closes only the list on Escape: the event comes from inside a popup, so the board leaves it alone", () => {
     const { trigger, onChange } = setup();
     const seen: { inside: boolean; action: string }[] = [];
@@ -178,5 +204,19 @@ describe("shared look", () => {
     ];
     for (const root of roots) expect(root).not.toBeNull();
     expect(new Set(roots.map((root) => root!.className.split(" ").filter((name) => name.startsWith("orion-i-field")).join(" "))).size).toBe(1);
+    // ...and that one class takes its height, background, radius and padding from the shared variables only.
+    const rule = /^\.orion-i-field\{([^}]*)\}/m.exec(INSPECTOR_CSS)?.[1] ?? "";
+    expect(rule).toContain("height:var(--orion-i-field-h)");
+    expect(rule).toContain("background:var(--orion-i-field-bg)");
+    expect(rule).toContain("border-radius:var(--orion-i-field-radius)");
+    expect(rule).toContain("padding:var(--orion-i-field-pad)");
+    expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|\d+(?:\.\d+)?px/i);
+    // No variant rule re-declares them for a kind of field.
+    expect(INSPECTOR_CSS.match(/^\.orion-i-field[^{,]*\{[^}]*(?:height|background|border-radius):/gm)).toHaveLength(1);
+  });
+  it("lets a colour row fill its row like the other fields, even though the popover wraps it in an inline anchor", () => {
+    // Equal columns (grid), and the popover's wrapper, which holds the field, is stretched to the full column.
+    expect(INSPECTOR_CSS).toMatch(/\.orion-i-row\{[^}]*grid-auto-columns:minmax\(0,1fr\)/);
+    expect(INSPECTOR_CSS).toMatch(/\.orion-i-row>:has\(>\.orion-i-field\)\{[^}]*display:flex[^}]*width:100%/);
   });
 });

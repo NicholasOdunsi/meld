@@ -12,7 +12,7 @@ import {
 import { createPortal } from "react-dom";
 import { ChevronDown, MoveDiagonal } from "lucide-react";
 import { CANVAS_DARK_FILTER, ColourField, type ColourTriggerProps } from "./colour-field";
-import { ICON_SIZE } from "./inspector-theme";
+import { ICON_SIZE, MENU_LAYOUT } from "./inspector-theme";
 
 // The inspector's field primitives. Every control is a native element or button; all looks come
 // from the classes and variables in inspector-theme.ts (no literal colours or sizes here).
@@ -116,9 +116,6 @@ export function TextField({ ariaLabel, icon, label, value, onChange, onCommit, o
 
 type Option = { value: string; label: string };
 type MenuPlace = { left: number; width: number; top?: number; bottom?: number };
-// Room the list needs below the field before it opens upward instead (matches --orion-i-menu-max-h).
-const MENU_ROOM = 240;
-const MENU_GAP = 4;
 
 export function SelectField({ ariaLabel, icon, value, options, onChange, trailingText, disabled }: {
   ariaLabel: string;
@@ -160,11 +157,11 @@ export function SelectField({ ariaLabel, icon, value, options, onChange, trailin
     if (!rect) return;
     const room = window.innerHeight - rect.bottom;
     setPlace(
-      room < MENU_ROOM && rect.top > room
-        ? { left: rect.left, width: rect.width, bottom: window.innerHeight - rect.top + MENU_GAP }
-        : { left: rect.left, width: rect.width, top: rect.bottom + MENU_GAP },
+      room < MENU_LAYOUT.maxHeight && rect.top > room
+        ? { left: rect.left, width: rect.width, bottom: window.innerHeight - rect.top + MENU_LAYOUT.gap }
+        : { left: rect.left, width: rect.width, top: rect.bottom + MENU_LAYOUT.gap },
     );
-    listRef.current?.focus();
+    listRef.current?.focus({ preventScroll: true });
   }, [open]);
   // A press outside, or the page moving under the list, closes it.
   useEffect(() => {
@@ -215,7 +212,8 @@ export function SelectField({ ariaLabel, icon, value, options, onChange, trailin
     event.preventDefault();
   }
 
-  const menuStyle: CSSProperties | undefined = place ? { left: place.left, width: place.width, top: place.top, bottom: place.bottom } : { visibility: "hidden" };
+  // Until it is placed the list is transparent (never visibility:hidden, which would refuse focus).
+  const menuStyle: CSSProperties | undefined = place ? { left: place.left, width: place.width, top: place.top, bottom: place.bottom } : undefined;
   return (
     <div ref={rootRef} className={FIELD_CLASS} data-disabled={disabled || undefined}>
       {icon ? <span className="orion-i-field__p">{icon}</span> : null}
@@ -248,6 +246,7 @@ export function SelectField({ ariaLabel, icon, value, options, onChange, trailin
               aria-activedescendant={`${listId}-${active}`}
               tabIndex={-1}
               className="orion-i-menu orion-i-scope"
+              data-placed={place ? "" : undefined}
               style={menuStyle}
               onKeyDown={onListKeyDown}
               onBlur={(event) => {
