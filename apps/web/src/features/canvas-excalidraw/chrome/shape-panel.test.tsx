@@ -163,4 +163,12 @@ describe("ShapePanel", () => {
     rerender(panel(4));
     expect(thickness).toHaveValue("4");
   });
+
+  it("offers Fill for a closed line (a triangle) but not an open one", () => {
+    setup({ elementType: "line", closed: true });
+    expect(screen.getByRole("button", { name: "Fill" })).toBeInTheDocument();
+    cleanup();
+    setup({ elementType: "line" });
+    expect(screen.queryByRole("button", { name: "Fill" })).toBeNull();
+  });
 });

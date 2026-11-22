@@ -40,14 +40,23 @@ export type Controls = { panel: boolean; fill: boolean; stroke: boolean; thickne
 const NONE: Controls = { panel: false, fill: false, stroke: false, thickness: false, style: false, corners: false, opacity: false };
 const LINE_LIKE: Controls = { panel: true, fill: false, stroke: true, thickness: true, style: true, corners: false, opacity: true };
 
+// A line whose last point returns to its first is a closed polygon (the triangle tool makes these), so it can be filled.
+export function isClosedLine(element: { type: string; points?: readonly (readonly [number, number])[] | readonly number[][] }): boolean {
+  const points = element.points;
+  if (element.type !== "line" || !points || points.length < 3) return false;
+  const first = points[0]!, last = points[points.length - 1]!;
+  return Math.hypot(first[0]! - last[0]!, first[1]! - last[1]!) < 1;
+}
+
 // Which panel controls do something for an Excalidraw element type. Frames, screens and images get no panel.
-export function applicableControls(type: string): Controls {
+// `closed` is true for a closed line (see isClosedLine), which takes a fill like any other shape.
+export function applicableControls(type: string, closed = false): Controls {
   switch (type) {
     case "rectangle": return { ...LINE_LIKE, fill: true, corners: true };
     case "ellipse":
     case "diamond":
     case "freedraw": return { ...LINE_LIKE, fill: true };
-    case "line":
+    case "line": return closed ? { ...LINE_LIKE, fill: true } : LINE_LIKE;
     case "arrow": return LINE_LIKE;
     case "text": return { ...NONE, panel: true, stroke: true, opacity: true };
     default: return NONE;
@@ -55,8 +64,8 @@ export function applicableControls(type: string): Controls {
 }
 
 // The part of a panel patch this element type can take (a mixed selection gets a different patch per element).
-export function patchFor(type: string, patch: Record<string, unknown>): Record<string, unknown> {
-  const controls = applicableControls(type);
+export function patchFor(type: string, patch: Record<string, unknown>, closed = false): Record<string, unknown> {
+  const controls = applicableControls(type, closed);
   const keep: Record<string, keyof Controls> = {
     backgroundColor: "fill", fillStyle: "fill", strokeColor: "stroke", strokeWidth: "thickness",
     strokeStyle: "style", roundness: "corners", opacity: "opacity",

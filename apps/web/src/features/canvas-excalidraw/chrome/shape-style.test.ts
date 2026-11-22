@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applicableControls, patchFor, readShapeStyle, shapePatch } from "./shape-style";
+import { applicableControls, isClosedLine, patchFor, readShapeStyle, shapePatch } from "./shape-style";
+import { triangleFromDrag } from "./triangle";
 
 describe("shape style mapping", () => {
   it("reads Excalidraw props into panel terms", () => {
@@ -58,5 +59,24 @@ describe("patchFor keeps a patch to what the element can take", () => {
   });
   it("gives screens, frames and images nothing", () => {
     for (const type of ["embeddable", "iframe", "image", "frame", "magicframe"]) expect(patchFor(type, everything)).toEqual({});
+  });
+});
+
+describe("closed lines (triangles) take a fill", () => {
+  const triangle = { type: "line", points: triangleFromDrag({ x: 0, y: 0 }, { x: 100, y: 80 }).points };
+  it("recognises a line that returns to its first point", () => {
+    expect(isClosedLine(triangle)).toBe(true);
+    expect(isClosedLine({ type: "line", points: [[0, 0], [50, 50], [100, 0]] })).toBe(false);
+    expect(isClosedLine({ type: "line", points: [[0, 0], [10, 10]] })).toBe(false);
+    expect(isClosedLine({ type: "arrow", points: [[0, 0], [50, 50], [0, 0]] })).toBe(false);
+    expect(isClosedLine({ type: "line" })).toBe(false);
+  });
+  it("offers and applies Fill only for the closed line", () => {
+    expect(applicableControls("line", true).fill).toBe(true);
+    expect(applicableControls("line", true).corners).toBe(false);
+    expect(applicableControls("line").fill).toBe(false);
+    const fill = shapePatch({ fill: "#ff0000" });
+    expect(patchFor("line", fill, true)).toEqual({ backgroundColor: "#ff0000", fillStyle: "solid" });
+    expect(patchFor("line", fill)).toEqual({});
   });
 });

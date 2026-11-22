@@ -42,7 +42,7 @@ import { CanvasDock } from "./chrome/canvas-dock";
 import { SelectionPill, type ScreenAction } from "./chrome/selection-pill";
 import { ShapePanel } from "./chrome/shape-panel";
 import { InteractChip } from "./chrome/interact-chip";
-import { applicableControls, patchFor, readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
+import { applicableControls, isClosedLine, patchFor, readShapeStyle, shapePatch, type ShapeStyle } from "./chrome/shape-style";
 import { describeSelection, sameSelection, type SelectionSummary } from "./chrome/selection";
 import { activeToolFor, dockToolForActive, type DockTool } from "./chrome/tools";
 import { dotGridStyle } from "./chrome/dot-grid";
@@ -249,12 +249,12 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     });
   }, [api, selection]);
   // The selected shape's look, read from the scene so the panel follows every change (the selection summary does not).
-  const [shapeInfo, setShapeInfo] = useState<{ style: ShapeStyle; type: string; textSize?: number } | null>(null);
+  const [shapeInfo, setShapeInfo] = useState<{ style: ShapeStyle; type: string; closed: boolean; textSize?: number } | null>(null);
   const changeShape = useCallback((change: Partial<ShapeStyle>) => {
     const patch = shapePatch(change);
     // Each element takes only what applies to its own type (text just colour and opacity, screens and frames nothing).
     updateSelected((element) => {
-      const own = patchFor(element.type, patch);
+      const own = patchFor(element.type, patch, isClosedLine(element as { type: string; points?: readonly (readonly [number, number])[] }));
       return Object.keys(own).length ? newElementWith(element, own as never) : element;
     });
   }, [updateSelected]);
@@ -462,10 +462,10 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                 setSelection((current) => (sameSelection(current, nextSelection) ? current : nextSelection));
                 // The panel reads the first selected element that has controls, preferring a drawn shape over text in a mix.
                 const candidates = nextSelection && nextSelection.kind !== "screen"
-                  ? nextSelection.ids.map((id) => elements.find((element) => element.id === id)).filter((element) => element && applicableControls(element.type).panel)
+                  ? nextSelection.ids.map((id) => elements.find((element) => element.id === id)).filter((element) => element && applicableControls(element.type, isClosedLine(element as { type: string; points?: readonly (readonly [number, number])[] })).panel)
                   : [];
                 const first = candidates.find((element) => element?.type !== "text") ?? candidates[0];
-                const nextInfo = first ? { style: readShapeStyle(first), type: first.type, ...(first.type === "text" ? { textSize: first.fontSize } : {}) } : null;
+                const nextInfo = first ? { style: readShapeStyle(first), type: first.type, closed: isClosedLine(first as { type: string; points?: readonly (readonly [number, number])[] }), ...(first.type === "text" ? { textSize: first.fontSize } : {}) } : null;
                 setShapeInfo((current) => (JSON.stringify(current) === JSON.stringify(nextInfo) ? current : nextInfo));
                 setView((current) => {
                   const next = { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value, width: appState.width, height: appState.height };
@@ -530,6 +530,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             style={shapeInfo.style}
             kind={shapeInfo.type === "text" ? "text" : "shape"}
             elementType={shapeInfo.type}
+            closed={shapeInfo.closed}
             textSize={shapeInfo.textSize}
             onChange={changeShape}
             onTextSize={changeTextSize}

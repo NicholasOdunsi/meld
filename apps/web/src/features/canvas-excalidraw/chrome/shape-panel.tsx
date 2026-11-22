@@ -81,17 +81,19 @@ function Labelled({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-export function ShapePanel({ style, kind, elementType = "rectangle", onChange, onTextSize, textSize, onClose }: {
+export function ShapePanel({ style, kind, elementType = "rectangle", closed = false, onChange, onTextSize, textSize, onClose }: {
   style: ShapeStyle;
   kind: "shape" | "text";
   // The Excalidraw type of the element the panel reads; decides which controls show.
   elementType?: string;
+  // A closed line (a triangle) can be filled.
+  closed?: boolean;
   onChange: (change: Partial<ShapeStyle>) => void;
   onTextSize?: (px: number) => void;
   textSize?: number;
   onClose: () => void;
 }) {
-  const controls = applicableControls(kind === "text" ? "text" : elementType);
+  const controls = applicableControls(kind === "text" ? "text" : elementType, closed);
   return (
     <LayoutPanel width={LIVE_PANEL_WIDTH} hasDivider padding={3} label={kind === "text" ? "Text" : "Shape"}>
       <VStack gap={3} data-testid="shape-panel">
