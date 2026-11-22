@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { Grid } from "@astryxdesign/core/Grid";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -10,6 +10,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { VStack } from "@astryxdesign/core/VStack";
 import { ColourField } from "../live/colour-field";
+import { useFieldText } from "../live/field-text";
 import { LIVE_PANEL_WIDTH } from "../live/live-panel";
 import { applicableControls, clamp, MAX_STROKE_WIDTH, MAX_TEXT_SIZE, MIN_STROKE_WIDTH, MIN_TEXT_SIZE, type ShapeStyle, type StrokeStyle } from "./shape-style";
 
@@ -22,7 +23,8 @@ const CORNERS = [{ value: "square", label: "Square" }, { value: "rounded", label
 const WHOLE_NUMBER = /^\d+$/;
 
 // Number fields are text boxes that commit on Enter or blur (a native number box fires on every keystroke).
-// The parent re-keys this when the element's own value changes, which resets the typed text.
+// They are never re-keyed by value: the box follows the element's value in place (useFieldText), so
+// arrow-key steps keep the same input and its focus.
 function NumberField({ label, value, min, max, error, onCommit }: {
   label: string;
   value: number;
@@ -31,10 +33,8 @@ function NumberField({ label, value, min, max, error, onCommit }: {
   error: string;
   onCommit: (value: number) => void;
 }) {
-  const [text, setText] = useState(String(value));
+  const { text, setText, submitted, setSubmitted } = useFieldText(String(value));
   const [invalid, setInvalid] = useState(false);
-  // Enter then blur must not apply the same value twice before the element has caught up.
-  const submitted = useRef(value);
   function commit(raw: string = text) {
     const typed = raw.trim().replace(/(px|%)$/i, "").trim();
     if (!WHOLE_NUMBER.test(typed)) {
@@ -44,8 +44,9 @@ function NumberField({ label, value, min, max, error, onCommit }: {
     const next = clamp(Number(typed), min, max);
     setInvalid(false);
     setText(String(next));
-    if (next === submitted.current) return;
-    submitted.current = next;
+    // Enter then blur must not apply the same value twice before the element has caught up.
+    if (String(next) === submitted) return;
+    setSubmitted(String(next));
     onCommit(next);
   }
   return (
@@ -104,7 +105,7 @@ export function ShapePanel({ style, kind, elementType = "rectangle", onChange, o
               <ColourField label="Colour" value={style.stroke} used={[]} canvasFilter onChange={(stroke) => onChange({ stroke })} />
             </Labelled>
             {textSize !== undefined ? (
-              <NumberField key={`size:${textSize}`} label="Size (px)" value={textSize} min={MIN_TEXT_SIZE} max={MAX_TEXT_SIZE}
+              <NumberField label="Size (px)" value={textSize} min={MIN_TEXT_SIZE} max={MAX_TEXT_SIZE}
                 error="Use a whole number, like 20." onCommit={(px) => onTextSize?.(px)} />
             ) : null}
           </>
@@ -122,11 +123,11 @@ export function ShapePanel({ style, kind, elementType = "rectangle", onChange, o
             ) : null}
             <Grid columns={{ minWidth: 96, repeat: "fit" }} gap={2}>
               {controls.thickness ? (
-                <NumberField key={`width:${style.strokeWidth}`} label="Thickness (px)" value={style.strokeWidth} min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH}
+                <NumberField label="Thickness (px)" value={style.strokeWidth} min={MIN_STROKE_WIDTH} max={MAX_STROKE_WIDTH}
                   error="Use a whole number, like 2." onCommit={(strokeWidth) => onChange({ strokeWidth })} />
               ) : null}
               {controls.opacity ? (
-                <NumberField key={`opacity:${style.opacity}`} label="Opacity (%)" value={style.opacity} min={0} max={100}
+                <NumberField label="Opacity (%)" value={style.opacity} min={0} max={100}
                   error="Use a whole number from 0 to 100, like 80." onCommit={(opacity) => onChange({ opacity })} />
               ) : null}
             </Grid>

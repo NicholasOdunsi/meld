@@ -122,9 +122,53 @@ it("keeps a bad number local and explains it", () => {
   fireEvent.blur(padding);
   expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
   expect(onTweak).not.toHaveBeenCalled();
+  // Decimals are not whole numbers: the copy says so, and nothing is applied.
   fireEvent.change(padding, { target: { value: "2.5" } });
   fireEvent.blur(padding);
-  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "padding", value: "2.5" });
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  expect(onTweak).not.toHaveBeenCalled();
+  fireEvent.change(padding, { target: { value: "3px" } });
+  fireEvent.blur(padding);
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "padding", value: "3" });
+});
+
+it("steps from a fractional rendered value to a whole number", () => {
+  const { onTweak } = setup({ computed: { ...COMPUTED, width: "120.4" } });
+  fireEvent.keyDown(number("Width"), { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "width", value: "121" });
+});
+
+it("keeps the same input, and its focus, through a refresh after each step", () => {
+  const onTweak = vi.fn();
+  const props: TweakPanelProps = {
+    label: "Action", fields: fields({ fontSize: { value: "16" } }), computed: { ...COMPUTED, fontSize: "16" }, used: [], onTweak, onAdd: vi.fn(), canAdd: true,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const size = number("Size");
+  size.focus();
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontSize", value: "17" });
+  // The change is applied: the panel is pending, then the element is read again (its label changes too).
+  rerender(<TweakPanel {...props} isPending />);
+  expect(number("Size")).toBe(size);
+  expect(document.activeElement).toBe(size);
+  // A step while pending does nothing (no double apply from a stale value).
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenCalledTimes(1);
+  rerender(<TweakPanel {...props} label="Action!" fields={fields({ fontSize: { value: "17" } })} computed={{ ...COMPUTED, fontSize: "17" }} />);
+  expect(number("Size")).toBe(size);
+  expect(document.activeElement).toBe(size);
+  expect(size).toHaveValue("17");
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontSize", value: "18" });
+  expect(onTweak).toHaveBeenCalledTimes(2);
+});
+
+it("ignores colour and dropdown changes while pending, and dims the body", async () => {
+  const { onTweak } = setup({ isPending: true });
+  expect(document.querySelector("[aria-busy=true]")).not.toBeNull();
+  await choose("Weight", "Bold");
+  expect(onTweak).not.toHaveBeenCalled();
 });
 
 it("steps a number with the arrow keys and commits each step once", () => {

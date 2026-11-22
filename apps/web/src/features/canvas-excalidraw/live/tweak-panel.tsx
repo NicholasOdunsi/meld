@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -10,6 +10,7 @@ import { Selector } from "@astryxdesign/core/Selector";
 import type { Field, Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { Computed } from "./live-messages";
 import { ColourField } from "./colour-field";
+import { useFieldText } from "./field-text";
 import { displayFontName, displayValues, FAMILIES, WEIGHTS, type FieldView } from "./inspector-values";
 
 export type TweakPanelProps = {
@@ -21,6 +22,9 @@ export type TweakPanelProps = {
   onAdd: () => void;
   canAdd: boolean;
   addReason?: string;
+  // The last change is being applied and the element read again: the fields stay (dimmed, same
+  // DOM nodes, focus kept) but take no new change until the fresh values arrive.
+  isPending?: boolean;
 };
 
 const CODE_OWNED = "Set by the screen's code. Change it in Code.";
@@ -35,33 +39,35 @@ const NUMBER_LABEL = {
   borderRadius: "Corner radius (px)",
 } as const;
 type NumberField = keyof typeof NUMBER_LABEL;
-const WHOLE_NUMBER = /^\d+(?:\.\d+)?$/;
+// Digits only (an optional "px" is stripped first), so the "whole number" wording is true.
+const WHOLE_NUMBER = /^\d+$/;
 
 function LiteralField({
   field,
   label,
   view,
   isNumber,
+  isPending,
   onTweak,
 }: {
   field: Field;
   label: string;
   view: FieldView;
   isNumber: boolean;
+  isPending: boolean;
   onTweak: (t: Tweak) => void;
 }) {
-  const initial = view.value ?? "";
-  const [value, setValue] = useState(initial);
+  const { text: value, setText: setValue, submitted, setSubmitted } = useFieldText(view.value ?? "");
   const [error, setError] = useState(false);
-  const submitted = useRef(initial);
   function commit(raw: string = value) {
     const next = isNumber ? raw.trim().replace(/px$/i, "").trim() : raw.trim();
-    if (!view.editable || next === submitted.current) return;
+    // While the last change is still being applied, typed text waits for the next Enter or blur.
+    if (!view.editable || isPending || next === submitted) return;
     if (isNumber && !WHOLE_NUMBER.test(next)) {
       setError(true);
       return;
     }
-    submitted.current = next;
+    setSubmitted(next);
     setError(false);
     onTweak({ field, value: next });
   }
@@ -85,9 +91,10 @@ function LiteralField({
           } else if (isNumber && view.editable && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
             // A step is a deliberate commit: parse what is shown, move by 1 (never below 0), apply at once.
             event.preventDefault();
+            if (isPending) return;
             const shown = Number(value.trim().replace(/px$/i, "").trim() || view.value || 0);
-            const base = Number.isFinite(shown) ? shown : 0;
-            const next = String(Math.max(0, Math.round((base + (event.key === "ArrowUp" ? 1 : -1)) * 1000) / 1000));
+            const base = Number.isFinite(shown) ? Math.round(shown) : 0;
+            const next = String(Math.max(0, base + (event.key === "ArrowUp" ? 1 : -1)));
             setValue(next);
             setError(false);
             commit(next);
@@ -100,16 +107,20 @@ function LiteralField({
 }
 
 export function TweakPanel(props: TweakPanelProps) {
-  const { label, computed, used, onTweak } = props;
+  const { label, computed, used } = props;
+  const isPending = props.isPending ?? false;
+  const onTweak = (tweak: Tweak) => { if (!isPending) props.onTweak(tweak); };
   const view = displayValues(props.fields, computed);
-  // A new element or a new value resets the local typing state.
+  // Keyed by field only: a refresh updates the box in place (see useFieldText). A different
+  // element remounts the whole panel, which resets typing state.
   const literal = (field: Field, name: string, isNumber: boolean) => (
     <LiteralField
-      key={`${field}:${label}:${view[field].value}:${view[field].editable}`}
+      key={field}
       field={field}
       label={name}
       view={view[field]}
       isNumber={isNumber}
+      isPending={isPending}
       onTweak={onTweak}
     />
   );
@@ -137,7 +148,7 @@ export function TweakPanel(props: TweakPanelProps) {
   );
 
   return (
-    <VStack gap={3}>
+    <VStack gap={3} aria-busy={isPending || undefined} data-pending={isPending || undefined} style={isPending ? { opacity: 0.6 } : undefined}>
       <Text type="label">{label}</Text>
       {view.text.hidden ? null : section("Content", <>{literal("text", "Text", false)}{note("text")}</>)}
       {section(

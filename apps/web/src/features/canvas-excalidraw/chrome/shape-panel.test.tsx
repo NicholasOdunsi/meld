@@ -147,4 +147,20 @@ describe("ShapePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stroke" }));
     expect(filtered().every((c) => c.style.filter === "invert(93%) hue-rotate(180deg)")).toBe(true);
   });
+
+  it("keeps the same thickness box, and its focus, across steps and the element's refresh", () => {
+    const onChange = vi.fn();
+    const panel = (strokeWidth: number) => <Layout end={<ShapePanel style={{ ...style, strokeWidth }} kind="shape" onChange={onChange} onClose={vi.fn()} />} />;
+    const { rerender } = render(panel(2));
+    const thickness = number("Thickness");
+    thickness.focus();
+    fireEvent.keyDown(thickness, { key: "ArrowUp" });
+    rerender(panel(3));
+    expect(number("Thickness")).toBe(thickness);
+    expect(document.activeElement).toBe(thickness);
+    fireEvent.keyDown(thickness, { key: "ArrowUp" });
+    expect(onChange.mock.calls).toEqual([[{ strokeWidth: 3 }], [{ strokeWidth: 4 }]]);
+    rerender(panel(4));
+    expect(thickness).toHaveValue("4");
+  });
 });
