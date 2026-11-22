@@ -287,3 +287,18 @@ it("does not carry typed text or an error into another element, but keeps the DO
   expect(number("Width")).toHaveValue("120");
   expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();
 });
+
+it("does not flag an untouched empty number box on blur or Enter, but still flags typed junk", () => {
+  // No plain number to show (value null, nothing computed): the box is empty.
+  const { onTweak } = setup({ computed: { ...COMPUTED, padding: "8px 16px" } });
+  const padding = number("Padding");
+  expect(padding).toHaveValue("");
+  fireEvent.blur(padding);
+  fireEvent.keyDown(padding, { key: "Enter" });
+  expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();
+  expect(onTweak).not.toHaveBeenCalled();
+  fireEvent.change(padding, { target: { value: "abc" } });
+  fireEvent.blur(padding);
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  expect(onTweak).not.toHaveBeenCalled();
+});

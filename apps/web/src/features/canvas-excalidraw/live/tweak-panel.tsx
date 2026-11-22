@@ -66,16 +66,18 @@ function LiteralField({
     const next = isNumber ? raw.trim().replace(/px$/i, "").trim() : raw.trim();
     // While the last change is still being applied, typed text waits for the next Enter or blur.
     if (!view.editable || isPending) return;
+    // Nothing new (an untouched box, even an empty one): not an error, and nothing to apply.
+    // The box shows what was applied ("9px" becomes "9"), so it follows later value changes.
+    if (next === submitted) {
+      setValue(next);
+      setError(false);
+      return;
+    }
     if (isNumber && !WHOLE_NUMBER.test(next)) {
       setError(true);
       return;
     }
-    // The box shows what was applied ("9px" becomes "9"), so it follows later value changes.
     setValue(next);
-    if (next === submitted) {
-      setError(false);
-      return;
-    }
     setSubmitted(next);
     setError(false);
     onTweak({ field, value: next });

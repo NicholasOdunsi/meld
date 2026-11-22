@@ -32,10 +32,8 @@ function setup() {
 }
 
 it("does not move text typed during a pending tweak into the next element's field, and keeps the node for the same one", async () => {
-  const control: { drop: () => void } = { drop: () => {} };
   function Board({ props, picked }: { props: HandEditPanelProps; picked: HandEditPanelProps["picked"] }) {
     const [reselect, setReselect] = useState<string | null>(null);
-    control.drop = () => setReselect(null);
     return <HandEditPanel {...props} picked={picked} reselect={reselect} onReselect={setReselect} />;
   }
   const s = setup();
