@@ -166,8 +166,8 @@ export const INSPECTOR_CSS = `
 .orion-code__issue-file{display:block;color:var(--orion-i-field-muted)}
 .orion-i-body{display:flex;flex-direction:column;box-sizing:border-box;color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size);line-height:1.2}
 .orion-i-body[data-pending]{opacity:var(--orion-i-pending-opacity)}
-.orion-i-section:not(:first-of-type){border-top:1px solid var(--orion-i-panel-divider)}
-.orion-i-section{padding:var(--orion-i-section-pad)}
+/* Every section, the first included, starts with the divider: in the mock the line under the header is the first section's. */
+.orion-i-section{border-top:1px solid var(--orion-i-panel-divider);padding:var(--orion-i-section-pad)}
 .orion-i-section__head{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--orion-i-section-head-gap)}
 .orion-i-section__title{margin:0;color:var(--orion-i-section-fg);font-size:var(--orion-i-section-size);font-weight:var(--orion-i-section-weight);line-height:1.2}
 .orion-i-section__toggle{appearance:none;border:0;margin:0;padding:2px;cursor:pointer;display:grid;place-items:center;background:transparent;color:var(--orion-i-section-chevron);border-radius:var(--orion-i-btn-radius)}
