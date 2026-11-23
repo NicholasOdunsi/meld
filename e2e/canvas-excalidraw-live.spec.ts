@@ -225,6 +225,8 @@ async function openRoomBoard(page: Page, baseURL: string) {
   ]);
   await page.goto(`${route}?room=${roomId}`);
   await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
+  // The room's saved scene lands a beat after the canvas: wait for it before counting frames.
+  await expect.poll(() => page.evaluate(() => window.__orionBoard?.ready() ?? false)).toBe(true);
 }
 
 async function pasteCode(
@@ -1056,16 +1058,19 @@ test("Escape order: a popup first, then the selection, then Edit, then the scree
 // ---- Cmd+Z / Shift+Cmd+Z for screen edits ----
 
 // A rectangle drawn on the board far from the screen, recorded in the board's own undo history.
+// Every test shares one fake room, so each rectangle gets its own id and only that one is counted.
+let rectangleId = "";
 async function drawRectangle(page: Page) {
-  await page.evaluate(() => {
+  rectangleId = await page.evaluate(() => {
     const board = window.__orionBoard!;
-    const [rectangle] = board.convert([{ type: "rectangle", id: "keys-box", x: -3000, y: -3000, width: 120, height: 80 }]);
+    const [rectangle] = board.convert([{ type: "rectangle", x: -3000, y: -3000, width: 120, height: 80 }]);
     board.api.updateScene({ elements: [...board.api.getSceneElementsIncludingDeleted(), rectangle], captureUpdate: "IMMEDIATELY" as never });
+    return rectangle.id;
   });
   await expect.poll(() => rectangles(page)).toBe(1);
 }
 const rectangles = (page: Page) =>
-  page.evaluate(() => window.__orionBoard!.api.getSceneElements().filter((element) => element.type === "rectangle").length);
+  page.evaluate((id) => window.__orionBoard!.api.getSceneElements().filter((element) => element.type === "rectangle" && element.id === id).length, rectangleId);
 
 // Keyboard focus on the board itself (Excalidraw's own container), where its undo listens.
 async function focusBoard(page: Page) {

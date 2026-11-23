@@ -72,6 +72,8 @@ declare global {
       api: ExcalidrawImperativeAPI;
       readCanvasEditTestState?:typeof readCanvasEditTestState;
       roomId: string | null;
+      /** True once a room board has its saved scene on screen. */
+      ready: () => boolean;
       convert: typeof convertToExcalidrawElements;
       addFixture: (key: FixtureKey) => void;
       addFrames: (count: number, key: FixtureKey) => void;
@@ -374,6 +376,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
         api: next,
         ...(testPersistence?{readCanvasEditTestState:testPersistence}:{}),
         roomId: roomId ?? null,
+        ready: readyToFocus,
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
         setScreen: (id, html) => store.set({ id, rev: (store.get(id)?.rev ?? 0) + 1, html }),
