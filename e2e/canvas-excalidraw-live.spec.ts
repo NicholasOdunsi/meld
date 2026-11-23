@@ -1306,16 +1306,22 @@ test("text next to a span is editable on its own, undoes, and leaves the span pi
   await pillButton(page, "Redo").click();
   await expect(app.locator("h1")).toHaveText("RIDEFURTHERLIMITS.");
   await expect(second).toHaveValue("FURTHER");
-  // Clearing either line keeps its slot, so typing can resume without Undo.
+  // Clearing either line keeps its slot, so typing can resume once the edit has applied.
+  const pending = panel.locator('[aria-busy="true"]');
   await text.fill("");
   await text.press("Enter");
+  await expect(app.locator("h1")).toHaveText("FURTHERLIMITS.");
+  await expect(pending).toHaveCount(0);
   await expect(text).toHaveValue("");
   await expect(second).toHaveValue("FURTHER");
   await text.fill("RIDE");
   await text.press("Enter");
   await expect(app.locator("h1")).toHaveText("RIDEFURTHERLIMITS.");
+  await expect(pending).toHaveCount(0);
   await second.fill("");
   await second.press("Enter");
+  await expect(app.locator("h1")).toHaveText("RIDELIMITS.");
+  await expect(pending).toHaveCount(0);
   await expect(second).toHaveValue("");
   await expect(text).toHaveValue("RIDE");
   await second.fill("AGAIN");
