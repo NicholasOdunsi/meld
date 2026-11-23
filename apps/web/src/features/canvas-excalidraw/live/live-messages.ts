@@ -14,7 +14,8 @@ export const computedSchema = z.object({
 }).strict();
 export type Computed = z.infer<typeof computedSchema>;
 // A pinch over the live screen, in the frame's own px; the bridge bounds these the same way.
-const coord = z.number().min(-100_000).max(100_000);
+// The host still clamps the point onto the frame and batches the messages (chrome/zoom.ts).
+const coord = z.number().min(-20_000).max(20_000);
 export type FrameZoom = { x: number; y: number; deltaY: number } | { x: number; y: number; scale: number };
 const LiveFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({ source, type: z.literal("ready") }).strict(),
@@ -26,7 +27,7 @@ const LiveFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({ source, type: z.literal("goto"), screenKey: z.string().regex(SCREEN_KEY) }).strict(),
   z.object({ source, type: z.literal("snapshot"), html: z.string().max(MAX_SCREEN_HTML_CHARS) }).strict(),
   z.object({ source, type: z.literal("zoom"), x: coord, y: coord, deltaY: z.number().min(-1000).max(1000) }).strict(),
-  z.object({ source, type: z.literal("pinch"), x: coord, y: coord, scale: z.number().min(0.1).max(10) }).strict(),
+  z.object({ source, type: z.literal("pinch"), x: coord, y: coord, scale: z.number().min(0.5).max(2) }).strict(),
 ]);
 
 export type LiveFrameMessage = z.infer<typeof LiveFrameMessageSchema>;

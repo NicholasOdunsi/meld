@@ -134,7 +134,7 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
   window.addEventListener('wheel', (event) => {
     if (!event.ctrlKey || event.defaultPrevented) return;
     event.preventDefault();
-    post({ type: 'zoom', x: bound(event.clientX, 100000), y: bound(event.clientY, 100000), deltaY: bound(event.deltaY, 1000) });
+    post({ type: 'zoom', x: bound(event.clientX, 20000), y: bound(event.clientY, 20000), deltaY: bound(event.deltaY, 1000) });
   }, { passive: false });
   let gestureScale = 1;
   window.addEventListener('gesturestart', (event) => { event.preventDefault(); gestureScale = 1; });
@@ -142,9 +142,9 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
     event.preventDefault();
     const scale = event.scale;
     if (!Number.isFinite(scale) || scale <= 0) return;
-    const step = Math.max(0.1, Math.min(10, scale / gestureScale));
+    const step = Math.max(0.5, Math.min(2, scale / gestureScale));
     gestureScale = scale;
-    post({ type: 'pinch', x: bound(event.clientX, 100000), y: bound(event.clientY, 100000), scale: step });
+    post({ type: 'pinch', x: bound(event.clientX, 20000), y: bound(event.clientY, 20000), scale: step });
   });
   window.addEventListener('gestureend', (event) => { event.preventDefault(); });
   // While selecting, the screen must not react to a press at all: menus that open on pointerdown,

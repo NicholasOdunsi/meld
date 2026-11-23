@@ -13,11 +13,13 @@ import type { ScreenStore } from "./screen-store";
 const noSubscribe = () => () => {};
 const frameStyle = { width: "100%", height: "100%", border: 0, background: "var(--color-background-surface)" } as const;
 
-export function FrameHost({ screenId, store, live, onShowCode }: {
+export function FrameHost({ screenId, store, live, onShowCode, onLivePointer }: {
   screenId: string;
   store: ScreenStore;
   live?: LiveController;
   onShowCode?: () => void;
+  // Told when the pointer enters or leaves the live iframe (the board trusts its pinch reports only then).
+  onLivePointer?: (frame: HTMLIFrameElement, over: boolean) => void;
 }) {
   const screen = useSyncExternalStore(store.subscribe, () => store.get(screenId), () => undefined);
   const liveState = useSyncExternalStore(live?.subscribe ?? noSubscribe, () => live?.getState() ?? ASLEEP, () => ASLEEP);
@@ -44,6 +46,8 @@ export function FrameHost({ screenId, store, live, onShowCode }: {
         sandbox={FRAME_SANDBOX}
         srcDoc={view.document}
         ref={attachFrame}
+        onPointerEnter={(event) => onLivePointer?.(event.currentTarget, true)}
+        onPointerLeave={(event) => onLivePointer?.(event.currentTarget, false)}
         style={{ ...frameStyle, pointerEvents: "auto", outline: "var(--spacing-0-5) solid var(--color-accent)" }}
       />
     );

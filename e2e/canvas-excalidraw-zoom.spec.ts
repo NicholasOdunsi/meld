@@ -156,3 +156,43 @@ test("ctrl+wheel (a pinch) over the awake screen zooms the board about the curso
   await page.keyboard.up("Control");
   await expect.poll(async () => (await appState(page)).zoom).toBeGreaterThan(outside);
 });
+
+test("the screen's own code cannot drive the board: zoom messages count only with the pointer over it, are batched per frame and anchored inside it", async ({ page }) => {
+  const live = await wakeSample(page);
+  const frame = (await (await live.elementHandle())!.contentFrame())!;
+  const post = (message: object, times = 1) =>
+    frame.evaluate(([data, count]) => {
+      for (let index = 0; index < count; index += 1) window.parent.postMessage({ source: "orion-frame", ...data }, "*");
+    }, [message, times] as const);
+  const canvas = (await page.locator("canvas.excalidraw__canvas").last().boundingBox())!;
+
+  // Pointer on empty board: a flood of forged zooms changes nothing.
+  await page.mouse.move(canvas.x + 40, canvas.y + canvas.height - 40);
+  const start = await appState(page);
+  await post({ type: "zoom", x: 10, y: 10, deltaY: -100 }, 50);
+  await post({ type: "pinch", x: 10, y: 10, scale: 2 }, 50);
+  await page.waitForTimeout(400);
+  expect((await appState(page)).zoom).toBe(start.zoom);
+
+  // Pointer over the screen: a burst of 50 is one batched step, not 50, and a point far outside the
+  // frame is clamped onto its corner, so that corner stays where it was on screen.
+  const box = (await live.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const corner = await page.evaluate(() => {
+    const api = window.__orionBoard!.api;
+    const element = api.getSceneElements().find((candidate) => candidate.type === "embeddable")!;
+    return { x: element.x + element.width, y: element.y + element.height };
+  });
+  const onScreen = (state: Awaited<ReturnType<typeof appState>>) => ({
+    x: (corner.x + state.scrollX) * state.zoom, y: (corner.y + state.scrollY) * state.zoom,
+  });
+  const before = await appState(page);
+  await post({ type: "zoom", x: 20000, y: 20000, deltaY: -100 }, 50);
+  await expect.poll(async () => (await appState(page)).zoom).toBeGreaterThan(before.zoom);
+  await page.waitForTimeout(400);
+  const after = await appState(page);
+  expect(after.zoom).toBeLessThan(before.zoom + 0.25);
+  const was = onScreen(before), now = onScreen(after);
+  expect(Math.abs(now.x - was.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(now.y - was.y)).toBeLessThanOrEqual(1);
+});

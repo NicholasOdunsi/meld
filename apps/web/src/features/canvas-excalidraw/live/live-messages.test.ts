@@ -24,15 +24,15 @@ describe("parseLiveFrameMessage", () => {
   });
   it("accepts zoom and pinch with bounded numbers only", () => {
     const zoom = { source: "orion-frame", type: "zoom", x: 140, y: -60, deltaY: -12.5 };
-    const pinch = { source: "orion-frame", type: "pinch", x: 0, y: 100000, scale: 0.1 };
+    const pinch = { source: "orion-frame", type: "pinch", x: 0, y: 20000, scale: 0.5 };
     expect(from(zoom)).toEqual(zoom);
     expect(from(pinch)).toEqual(pinch);
-    expect(from({ ...zoom, deltaY: 1000, x: -100000 })).not.toBeNull();
-    expect(from({ ...pinch, scale: 10 })).not.toBeNull();
+    expect(from({ ...zoom, deltaY: 1000, x: -20000 })).not.toBeNull();
+    expect(from({ ...pinch, scale: 2 })).not.toBeNull();
     for (const bad of [
-      { ...zoom, deltaY: 1000.5 }, { ...zoom, deltaY: Number.NaN }, { ...zoom, x: 100001 }, { ...zoom, y: Infinity },
+      { ...zoom, deltaY: 1000.5 }, { ...zoom, deltaY: Number.NaN }, { ...zoom, x: 20001 }, { ...zoom, y: -20001 }, { ...zoom, y: Infinity },
       { ...zoom, x: "1" }, { ...zoom, extra: 1 }, { source: "orion-frame", type: "zoom", x: 1, y: 1 },
-      { ...pinch, scale: 0.09 }, { ...pinch, scale: 10.1 }, { ...pinch, scale: Number.NaN }, { ...pinch, deltaY: 1 },
+      { ...pinch, scale: 0.49 }, { ...pinch, scale: 2.01 }, { ...pinch, scale: 10 }, { ...pinch, scale: Number.NaN }, { ...pinch, deltaY: 1 },
     ]) expect(from(bad)).toBeNull();
     expect(from(zoom, {})).toBeNull();
   });

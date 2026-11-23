@@ -559,11 +559,12 @@ export function createLiveController(deps: LiveDeps): LiveController {
         case "escape":
           if (!deps.onEscape?.()) void sleep();
           break;
+        // Only a frame that is running (ready, this attempt) may zoom the board.
         case "zoom":
-          deps.onZoom?.({ x: message.x, y: message.y, deltaY: message.deltaY });
+          if (state.phase === "running") deps.onZoom?.({ x: message.x, y: message.y, deltaY: message.deltaY });
           break;
         case "pinch":
-          deps.onZoom?.({ x: message.x, y: message.y, scale: message.scale });
+          if (state.phase === "running") deps.onZoom?.({ x: message.x, y: message.y, scale: message.scale });
           break;
         case "snapshot":
           // Untrusted page text: passed on as-is, never parsed or run here.

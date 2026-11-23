@@ -109,7 +109,7 @@ describe("FRAME_BRIDGE_SOURCE", () => {
     expect(wheel({ ctrlKey: true, deltaY: 40, defaultPrevented: true })).not.toHaveBeenCalled();
     expect(window.parent.postMessage.mock.calls).toEqual([
       [{ source: FRAME_MESSAGE_SOURCE, type: "zoom", x: 140, y: 60, deltaY: -12.5 }, "*"],
-      [{ source: FRAME_MESSAGE_SOURCE, type: "zoom", x: -100000, y: 0, deltaY: 1000 }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "zoom", x: -20000, y: 0, deltaY: 1000 }, "*"],
     ]);
   });
   it("hands Safari pinch gestures to the board as bounded scale steps and stops page zoom", () => {
@@ -121,7 +121,7 @@ describe("FRAME_BRIDGE_SOURCE", () => {
     };
     expect(gesture("gesturestart", { scale: 1 })).toHaveBeenCalledOnce();
     expect(gesture("gesturechange", { scale: 1.5 })).toHaveBeenCalledOnce();
-    expect(gesture("gesturechange", { scale: 3 })).toHaveBeenCalledOnce();
+    expect(gesture("gesturechange", { scale: 2.25 })).toHaveBeenCalledOnce();
     expect(gesture("gesturechange", { scale: 0 })).toHaveBeenCalledOnce();
     expect(gesture("gesturechange", { scale: 1e6 })).toHaveBeenCalledOnce();
     expect(gesture("gestureend", { scale: 1e6 })).toHaveBeenCalledOnce();
@@ -130,8 +130,8 @@ describe("FRAME_BRIDGE_SOURCE", () => {
     gesture("gesturechange", { scale: 0.5 });
     expect(window.parent.postMessage.mock.calls).toEqual([
       [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 1.5 }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 1.5 }, "*"],
       [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 2 }, "*"],
-      [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 10 }, "*"],
       [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 0.5 }, "*"],
     ]);
   });

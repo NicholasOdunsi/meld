@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameHost } from "./frame-host";
@@ -49,6 +49,18 @@ describe("FrameHost", () => {
     expect(iframe.getAttribute("srcdoc")).toBe("<p>live</p>");
     expect(iframe.style.pointerEvents).toBe("auto");
     expect(live.attachFrame).toHaveBeenCalledWith(iframe.contentWindow);
+  });
+
+  it("tells the board when the pointer enters and leaves the live iframe", () => {
+    const live = fakeLive({ phase: "running", screenId: "welcome", attempt: 2, source, document: "<p>live</p>", errors: [] });
+    const onLivePointer = vi.fn();
+    const store = createScreenStore();
+    store.set({ id: "welcome", rev: 1, html: "<h1>Hi</h1>" });
+    const { container } = render(<FrameHost screenId="welcome" store={store} live={live} onLivePointer={onLivePointer} />);
+    const iframe = container.querySelector("iframe[data-orion-live='welcome']") as HTMLIFrameElement;
+    fireEvent.pointerEnter(iframe);
+    fireEvent.pointerLeave(iframe);
+    expect(onLivePointer.mock.calls).toEqual([[iframe, true], [iframe, false]]);
   });
 
   it("keeps other screens as pictures while one is live", () => {

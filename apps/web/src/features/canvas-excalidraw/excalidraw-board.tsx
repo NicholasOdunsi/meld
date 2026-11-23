@@ -48,7 +48,7 @@ import { dotGridStyle } from "./chrome/dot-grid";
 import { useNoPageBounce } from "./chrome/no-page-bounce";
 import { useTriangleShortcut, useTriangleTool } from "./chrome/use-triangle-tool";
 import { ZoomControl } from "./chrome/zoom-control";
-import { wheelZoom, zoomAnchor, zoomAroundCenter, type Viewport } from "./chrome/zoom";
+import { createFrameZoomBatch, frameZoomAnchor, frameZoomTarget, zoomAnchor, zoomAroundCenter, type Viewport } from "./chrome/zoom";
 import { createCompilerLease } from "./live/compiler-lease";
 import { createHandEditing } from "./live/hand-editing";
 import { HandEditPanel } from "./live/hand-edit-panel";
@@ -242,23 +242,32 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     apiRef.current?.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } });
   }, []);
   // A pinch over the awake screen never reaches the board (the iframe takes the wheel), so the
-  // frame's bridge reports it in its own px; the board zooms about that point as Excalidraw would.
+  // frame's bridge reports it in its own px. The screen's code is untrusted: a report counts only
+  // while the pointer is over that iframe (the board sees the pointer enter and leave it), its
+  // point is clamped onto the frame, and a burst is applied at most once per animation frame.
+  const pointerOverLive = useRef<HTMLIFrameElement | null>(null);
+  const onLivePointer = useCallback((frame: HTMLIFrameElement, over: boolean) => {
+    if (over) pointerOverLive.current = frame;
+    else if (pointerOverLive.current === frame) pointerOverLive.current = null;
+  }, []);
   useEffect(() => {
-    editing.setFrameZoom((zoom) => {
-      const current = apiRef.current, state = live.getState();
-      if (!current || state.phase === "asleep") return;
-      const frame = document.querySelector<HTMLIFrameElement>(`iframe[data-orion-live="${CSS.escape(state.screenId)}"]`);
-      if (!frame) return;
+    const overLiveFrame = () => {
+      const frame = pointerOverLive.current, state = live.getState();
+      return frame?.isConnected && state.phase !== "asleep" && frame.dataset.orionLive === state.screenId ? frame : null;
+    };
+    const batch = createFrameZoomBatch((run) => { requestAnimationFrame(run); }, (step) => {
+      const current = apiRef.current, frame = overLiveFrame();
+      if (!current || !frame) return;
       const app = current.getAppState(), rect = frame.getBoundingClientRect();
-      const scale = frame.offsetWidth ? rect.width / frame.offsetWidth : app.zoom.value;
-      const at = { scrollX: app.scrollX, scrollY: app.scrollY, zoom: app.zoom.value, width: app.width, height: app.height };
-      applyZoom(zoomAroundCenter(
-        at,
-        "deltaY" in zoom ? wheelZoom(at.zoom, zoom.deltaY) : at.zoom * zoom.scale,
-        { x: rect.left + zoom.x * scale - app.offsetLeft, y: rect.top + zoom.y * scale - app.offsetTop },
-      ));
+      const board = { scrollX: app.scrollX, scrollY: app.scrollY, zoom: app.zoom.value, width: app.width, height: app.height, offsetLeft: app.offsetLeft, offsetTop: app.offsetTop };
+      const box = { left: rect.left, top: rect.top, width: rect.width, height: rect.height, offsetWidth: frame.offsetWidth, offsetHeight: frame.offsetHeight };
+      applyZoom(zoomAroundCenter(board, frameZoomTarget(board.zoom, step), frameZoomAnchor(step.point, box, board)));
     });
-    return () => editing.setFrameZoom(null);
+    editing.setFrameZoom((zoom) => { if (overLiveFrame()) batch.push(zoom); });
+    return () => {
+      editing.setFrameZoom(null);
+      batch.cancel();
+    };
   }, [applyZoom, editing, live]);
   useEffect(() => store.subscribe(() => {
     if (api) queueSave(api.getSceneElementsIncludingDeleted());
@@ -529,6 +538,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
                     store={store}
                     live={element.id === liveFrameId ? live : undefined}
                     onShowCode={showCode}
+                    onLivePointer={onLivePointer}
                   />
                 );
               }}

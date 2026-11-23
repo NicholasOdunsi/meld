@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { stepZoom, wheelZoom, zoomAnchor, zoomAroundCenter } from "./zoom";
+import { vi } from "vitest";
+import { createFrameZoomBatch, frameZoomAnchor, frameZoomTarget, stepZoom, wheelZoom, zoomAnchor, zoomAroundCenter } from "./zoom";
 
 // Excalidraw maps scene → viewport as (scene + scroll) * zoom.
 const toViewport = (scene: number, scroll: number, zoom: number) => (scene + scroll) * zoom;
@@ -74,6 +75,65 @@ describe("wheelZoom", () => {
   it("clamps to the board's zoom range", () => {
     expect(wheelZoom(0.1, 100)).toBe(0.1);
     expect(wheelZoom(30, -100)).toBe(30);
+  });
+});
+
+describe("frameZoomAnchor", () => {
+  // The live iframe: 400×300 CSS px drawn at zoom 0.5, its top-left at page (300, 176); the board starts at page (0, 76).
+  const box = { left: 300, top: 176, width: 200, height: 150, offsetWidth: 400, offsetHeight: 300 };
+  const app = { scrollX: 0, scrollY: 0, zoom: 0.5, width: 1144, height: 924, offsetLeft: 0, offsetTop: 76 };
+  it("maps the frame's own px to board px through the iframe's drawn scale", () => {
+    expect(frameZoomAnchor({ x: 100, y: 60 }, box, app)).toEqual({ x: 350, y: 130 });
+  });
+  it("clamps a point off the frame onto its edge, so a hostile screen cannot move the anchor away", () => {
+    expect(frameZoomAnchor({ x: 100_000, y: -100_000 }, box, app)).toEqual({ x: 500, y: 100 });
+    expect(frameZoomAnchor({ x: -5, y: 1e9 }, box, app)).toEqual({ x: 300, y: 250 });
+  });
+  it("falls back to the frame centre when the clamped point is off the visible board, else to no anchor", () => {
+    const partly = { ...box, left: 1000 }; // the frame's right part runs past the board's edge (1144)
+    expect(frameZoomAnchor({ x: 390, y: 10 }, partly, app)).toEqual({ x: 1100, y: 175 });
+    expect(frameZoomAnchor({ x: 0, y: 0 }, { ...box, left: 5000 }, app)).toBeUndefined();
+  });
+  it("uses the board zoom for the scale when the iframe has no layout width", () => {
+    expect(frameZoomAnchor({ x: 100, y: 60 }, { ...box, offsetWidth: 0, offsetHeight: 0 }, app)).toEqual({ x: 350, y: 130 });
+  });
+});
+
+describe("frameZoomTarget", () => {
+  it("applies the summed wheel delta with Excalidraw's step, then the pinch ratio, clamped", () => {
+    expect(frameZoomTarget(1, { deltaY: -100, scale: 1 })).toBeCloseTo(1.1);
+    expect(frameZoomTarget(1, { deltaY: 0, scale: 1.5 })).toBeCloseTo(1.5);
+    expect(frameZoomTarget(1, { deltaY: -100, scale: 2 })).toBeCloseTo(2.2);
+    expect(frameZoomTarget(20, { deltaY: 0, scale: 2 })).toBe(30);
+  });
+});
+
+describe("createFrameZoomBatch", () => {
+  it("applies a burst of messages at most once per frame, summing wheels and multiplying pinches within bounds", () => {
+    const frames: (() => void)[] = [];
+    const apply = vi.fn();
+    const batch = createFrameZoomBatch((run) => { frames.push(run); }, apply);
+    for (let index = 0; index < 500; index += 1) batch.push({ x: index, y: 1, deltaY: -10 });
+    for (let index = 0; index < 50; index += 1) batch.push({ x: 7, y: 8, scale: 2 });
+    expect(frames).toHaveLength(1);
+    expect(apply).not.toHaveBeenCalled();
+    frames.shift()!();
+    expect(apply).toHaveBeenCalledExactlyOnceWith({ point: { x: 7, y: 8 }, deltaY: -1000, scale: 2 });
+    batch.push({ x: 1, y: 1, scale: 0.5 });
+    batch.push({ x: 1, y: 1, scale: 0.5 });
+    expect(frames).toHaveLength(1);
+    frames.shift()!();
+    expect(apply).toHaveBeenLastCalledWith({ point: { x: 1, y: 1 }, deltaY: 0, scale: 0.5 });
+    expect(apply).toHaveBeenCalledTimes(2);
+  });
+  it("drops what is pending when cancelled", () => {
+    const frames: (() => void)[] = [];
+    const apply = vi.fn();
+    const batch = createFrameZoomBatch((run) => { frames.push(run); }, apply);
+    batch.push({ x: 1, y: 1, deltaY: 5 });
+    batch.cancel();
+    frames.forEach((run) => run());
+    expect(apply).not.toHaveBeenCalled();
   });
 });
 
