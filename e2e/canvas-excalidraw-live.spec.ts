@@ -366,9 +366,10 @@ test("a wheel over an awake screen scrolls the screen, never the board, even at 
     return { x: state.scrollX, y: state.scrollY, zoom: state.zoom.value };
   });
   const pageScroll = () => content.evaluate(() => window.scrollY);
-  // The page keeps its scrolling to itself (the screen's own CSS can still override it).
+  // Body scrolling is contained; root containment prevents native scrolling in WebKit's
+  // transformed iframe. Root scroll leftovers are also stopped by the host wheel guard.
   expect(await content.evaluate(() => [document.documentElement, document.body].map((element) => getComputedStyle(element).overscrollBehaviorY)))
-    .toEqual(["contain", "contain"]);
+    .toEqual(["auto", "contain"]);
   const box = (await live.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   const start = await boardScroll();

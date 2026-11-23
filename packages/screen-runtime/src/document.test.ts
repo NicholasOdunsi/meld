@@ -79,8 +79,9 @@ describe("assembleScreenDocument", () => {
 
   it("keeps a screen's scrolling inside it, with defaults the screen's own CSS can override", () => {
     const styles = elements(assembleScreenDocument(screen, env), "style").map(text);
-    // Reaching the end of the page must not hand the leftover scroll to the board around it.
-    expect(SCREEN_DOCUMENT_DEFAULTS.join("\n")).toMatch(/html\s*,\s*body\s*\{[^}]*overscroll-behavior:\s*contain/);
+    // Body scrolling is contained; root containment breaks native iframe scrolling in WebKit.
+    expect(SCREEN_DOCUMENT_DEFAULTS).toContain("body{overscroll-behavior:contain}");
+    expect(SCREEN_DOCUMENT_DEFAULTS.some((rule) => /html[^}]*overscroll-behavior/.test(rule))).toBe(false);
     expect(styles.slice(0, SCREEN_DOCUMENT_DEFAULTS.length)).toEqual([...SCREEN_DOCUMENT_DEFAULTS]);
     // The defaults come before the screen's own styles, so equal-specificity author rules win.
     expect(styles.slice(SCREEN_DOCUMENT_DEFAULTS.length)).toEqual(screen.styles);

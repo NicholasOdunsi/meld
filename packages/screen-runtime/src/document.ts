@@ -32,13 +32,14 @@ export const SCREEN_SCROLLBAR_DEFAULTS: readonly string[] = [
  * The stylesheet every live screen document starts with, before the screen's own styles so a
  * screen can override any of it. Add new screen-wide defaults here (one rule per entry).
  * - No page margin.
- * - A screen keeps its scrolling to itself: reaching the end of its page must not hand the
- *   leftover scroll to the board around it (scroll chaining).
+ * - Body scrolling stays inside the screen. Do not contain the root html element: WebKit can
+ *   then refuse native wheel scrolling inside the board's transformed iframe. The host iframe
+ *   wheel guard also stops leftover root scrolling from panning the board.
  * - A quiet scrollbar (see SCREEN_SCROLLBAR_DEFAULTS).
  */
 export const SCREEN_DOCUMENT_DEFAULTS: readonly string[] = [
   "html,body{margin:0}",
-  "html,body{overscroll-behavior:contain}",
+  "body{overscroll-behavior:contain}",
   ...SCREEN_SCROLLBAR_DEFAULTS,
 ];
 
