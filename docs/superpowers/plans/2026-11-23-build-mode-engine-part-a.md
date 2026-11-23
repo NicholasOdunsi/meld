@@ -29,7 +29,7 @@ Spec: `docs/superpowers/specs/2026-11-23-build-mode-engine-design.md`.
 
 | File | Responsibility |
 |---|---|
-| `.superpowers/sdd/2026-11-23-build-mode-engine/spike.md` | Spike results: pin, Node choice, wire payloads, provider wiring (Task 1) |
+| `docs/superpowers/reports/2026-11-23-build-engine-spike.md` | Spike results: pin, Node choice, wire payloads, provider wiring (Task 1) |
 | `apps/connector/src/engine/fixtures/*.jsonl` | Recorded engine traffic for Plan B tests (Task 1) |
 | `packages/contracts/src/build.ts` (+ test) | Build contracts: statuses, events, code-link kinds (Task 2) |
 | `packages/contracts/src/ai.ts` | New task kinds + router `intent` (Task 2) |
@@ -52,7 +52,7 @@ Order: Task 1 → then Tasks 2 and 5 in parallel. Task 3 and Task 4 need Task 2.
 Exploratory. Nothing here merges to `main` except the spike notes and fixtures. Work in the throwaway clone `.context/t3code-src/t3code` (already present; re-clone at the tag you pin if needed) and a scratch git repo.
 
 **Files:**
-- Create: `.superpowers/sdd/2026-11-23-build-mode-engine/spike.md`
+- Create: `docs/superpowers/reports/2026-11-23-build-engine-spike.md`
 - Create: `apps/connector/src/engine/fixtures/build-turn.jsonl`, `approval.jsonl`, `clone.jsonl`
 
 **Interfaces:**
@@ -106,7 +106,7 @@ Exploratory. Nothing here merges to `main` except the spike notes and fixtures. 
 
 - [ ] **Step 12: Clean up and commit the evidence.** Stop the engine PID you captured. `rm -rf ~/orion-spike`.
   ```bash
-  git add .superpowers/sdd/2026-11-23-build-mode-engine/spike.md apps/connector/src/engine/fixtures
+  git add docs/superpowers/reports/2026-11-23-build-engine-spike.md apps/connector/src/engine/fixtures
   git commit -m "Record build engine spike results and fixtures"
   ```
 
@@ -948,7 +948,7 @@ export const ENGINE_RESTART_DELAYS_MS = [1_000, 5_000, 30_000];
 const STOP_GRACE_MS = 5_000;
 const HEALTH_POLL_MS = 250;
 
-// Exact values from .superpowers/sdd/2026-11-23-build-mode-engine/spike.md.
+// Exact values from docs/superpowers/reports/2026-11-23-build-engine-spike.md.
 const START_ARGS: string[] = [/* spike.md "Health check" start arguments, e.g. "serve", "--no-browser" */];
 const SESSION_ARGS: string[] = ["auth", "session", "issue", /* spike.md "Session" flags and scopes */];
 const HEALTH_PATH = "/* spike.md Health check path */";
@@ -1070,7 +1070,7 @@ The three `/* spike.md … */` markers are the only values the implementer fills
 Run: `pnpm --filter @meld/connector exec vitest run src/engine && pnpm --filter @meld/connector typecheck && pnpm check:test-colocation`
 Expected: PASS.
 
-- [ ] **Step 5: Manual check on the owner's Mac (once).** Write a 10-line script under `.context/` that builds `EngineInstaller` and `EngineProcess` with the real node dependencies, then calls `install()`, `start()`, prints the handle without the token, and calls `stop()`. Run it. Expected: it prints a URL on `127.0.0.1`, and `lsof` shows nothing left listening afterwards. Record the result in `.superpowers/sdd/2026-11-23-build-mode-engine/progress.md`.
+- [ ] **Step 5: Manual check on the owner's Mac (once).** Write a 10-line script under `.context/` that builds `EngineInstaller` and `EngineProcess` with the real node dependencies, then calls `install()`, `start()`, prints the handle without the token, and calls `stop()`. Run it. Expected: it prints a URL on `127.0.0.1`, and `lsof` shows nothing left listening afterwards. Record the result in `.superpowers/sdd/2026-11-23-build-mode-engine-part-a/progress.md`.
 
 - [ ] **Step 6: Commit**
 

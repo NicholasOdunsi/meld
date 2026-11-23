@@ -80,7 +80,7 @@ switch to the fallback plan: copy the engine's code into our repo and adapt it.
 ### Step 0 — engine spike (hard gate)
 
 Throwaway branch. It must show each of these working on the owner's Mac, with a written
-result in `.superpowers/sdd/2026-11-23-build-mode-engine/spike.md`:
+result in `docs/superpowers/reports/2026-11-23-build-engine-spike.md`:
 
 1. Install the latest stable `t3` from npm on spike day (package `t3`, bin `t3`; repo is at
    0.1.11 as of writing) into a connector-owned prefix using the managed Node. Record the
