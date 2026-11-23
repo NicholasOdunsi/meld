@@ -97,7 +97,13 @@ result in `.superpowers/sdd/2026-11-23-build-mode-engine/spike.md`:
    the turn continue.
 6. Clone a GitHub repo through the engine, and create a new GitHub repo, using the Mac's
    `gh` sign-in.
-7. Record whether the Mac app web view will show an `http://localhost` iframe inside the
+7. Point the engine's Claude and Codex at the connector's managed installs and their sign-in
+   folders (`providers/<name>/current` + `providers/<name>/home`), so building uses the same
+   sign-in as the rest of Orion. Record the exact engine settings that do this.
+8. The engine needs Node `^22.16 || ^23.11 || >=24.10`, but the connector's managed Node is
+   24.8.0. Try bumping the managed Node to the newest 24.x and re-run the provider smoke
+   test. If that breaks anything, give the engine its own Node instead. Record the choice.
+9. Record whether the Mac app web view will show an `http://localhost` iframe inside the
    https Orion page. This doesn't block part 1; it is recorded for part 3.
 
 If 4 or 5 can't be done over RPC, try the engine's MCP endpoint (`/mcp`: `create_threads`,
@@ -109,10 +115,10 @@ If 4 or 5 can't be done over RPC, try the engine's MCP endpoint (`/mcp`: `create
 |---|---|---|---|
 | `EngineInstaller` | `apps/connector/src/engine/engine-installer.ts` | Installs the pinned `t3` (version + integrity in `release-manifest.ts`) into `<connector>/engine/<version>` and verifies it | runtime-installer patterns |
 | `EngineProcess` | `engine/engine-process.ts` | Starts and stops the engine with the env from Step 0, picks a free port, restarts it with backoff, stops it when the connector stops, and runs a passive health check that never starts a provider | process-runner |
-| `EngineAuth` | `engine/engine-auth.ts` | Issues and renews the engine session and keeps it in the Keychain | keychain-store |
+| `EngineAuth` | `engine/engine-auth.ts` | Issues a fresh engine session with `t3 auth session issue` each time the engine starts and keeps it in memory only. Nothing is stored, because the engine only listens on this Mac | EngineProcess |
 | `EngineClient` | `engine/engine-client.ts` | The only code that speaks the engine's RPC. It exposes `linkFolder`, `cloneRepo`, `createRepo`, `startBuild(starId, prompt, model)`, `continueBuild`, `answerApproval`, `cancel` and `subscribe(threadId)`, and translates engine events into Orion `BuildEvent`s | pinned contracts |
 | `BuildTaskRunner` | `tasks/build-task.ts` | Handles the new gateway task kinds below. Maps Star ↔ engine thread and throttles events upstream | EngineClient, gateway-client |
-| Router change | `tasks/star-route-prompt.ts` + `StarRouteResultSchema` | Adds `intent: "answer" \| "build"` | contracts |
+| Router change | `tasks/star-route-prompt.ts` + `StarRouteResultSchema` | Adds `intent: "answer" \| "build" \| "unsure"`. `unsure` shows the "Build this?" pill. Routing now also runs when there are no open Stars | contracts |
 | Code link UI | web project settings + native Star panel | Picks the code source and shows build status, steps, approvals and changed files | gateway endpoints |
 
 T3's contracts use Effect Schema; ours use zod. Only `EngineClient` imports T3's types, so
@@ -129,7 +135,7 @@ The connector's content-only path is not changed. Build tasks never go through
   (a short label, at most 1 every 2 s per Star), `reply` (final text), `changed_files`
   (`{path, added, removed}[]`, max 200), `branch`, `approval_request` (`{id, summary,
   choices}`) and `engine_offline`.
-- `StarRouteResult` gains `intent`. If `intent=build` and the project has no linked code,
+- `StarRouteResult` gains `intent` (`answer | build | unsure`, default `answer`). If `intent=build` and the project has no linked code,
   Orion replies with a "Link code" card offering the three choices.
 
 ### Database (Supabase)
