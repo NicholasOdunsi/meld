@@ -78,6 +78,20 @@ Rules:
 
 ---
 
+### Task 4: A clean scrollbar inside screens, and no id tooltip
+
+**Files:** `frame-host.tsx` (iframe `title`), the board-frame document builder (`buildBoardFrameDocument`, find it with grep; also the live/thumbnail documents built from the same function), their tests, one e2e assertion.
+
+Owner: "i need you to clean the scroll bar you add no need for a background" (screenshot: the awake screen's right edge shows a scrollbar with a dark grey TRACK band behind a light thumb, next to the selection outline). The scrollbar is the browser's classic scrollbar inside the screen's iframe; nothing of ours styles it. Make it quiet: a thin scrollbar whose TRACK is fully transparent (no background band, no border) and whose thumb is a subtle rounded bar that reads on both dark and light screens (a translucent neutral, e.g. thumb `rgba(128,128,128,.45)`, slightly stronger on hover). Do it by injecting a low-priority default stylesheet into the screen document BEFORE the screen's own styles so a screen that styles its own scrollbar still wins: standard `scrollbar-width: thin; scrollbar-color: <thumb> transparent` on `html` (Chromium 121+ and recent WebKit honour it) AND `::-webkit-scrollbar{width/height:8px}`, `::-webkit-scrollbar-track{background:transparent}`, `::-webkit-scrollbar-thumb{background:…;border-radius:…;border:2px solid transparent;background-clip:padding-box}`, `::-webkit-scrollbar-corner{background:transparent}` as the fallback. Careful: where `scrollbar-color` is set Chromium ignores `::-webkit-scrollbar`; pick the combination that gives a transparent track in BOTH Chromium and WebKit (check in Chromium for real; say what you could not verify in WebKit). It must apply to the live iframe and to the asleep thumbnail document. Do not change the screen's layout width (use an overlay-like thin bar; if the track width changes layout, say so).
+
+Also fix the native tooltip in the owner's third screenshot: hovering a live screen shows "Live screen ds-d68c53d0-…" because the iframe has `title={`Live screen ${screenId}`}` (`frame-host.tsx:42`; the asleep one has `title="Screen …"`). Remove the browser tooltip while keeping an accessible name: drop `title` and use `aria-label` with a friendly name that does not contain the id (e.g. "Live screen" / "Screen"; use the screen's name if it is already available to the component without new plumbing). Update tests/e2e that located the iframe by its title (`data-orion-live`/`data-orion-frame` attributes exist), without weakening them.
+
+- [ ] **Step 1: Failing tests:** the generated screen document contains the default scrollbar stylesheet BEFORE the author's own `<style>`/content (assert order) and contains a transparent track rule; a screen with its own `::-webkit-scrollbar` rule is not overridden (specificity/order); iframe has no `title` attribute and has an `aria-label` without the screen id; e2e/real-browser measurement: in Chromium the iframe's scrollbar track is transparent (e.g. screenshot pixel check or computed `scrollbar-color`), screenshot `.context/fu-scroll-*.png` of an awake tall screen's right edge, read it.
+- [ ] **Step 2: FAIL. Step 3: Implement. Step 4: PASS** (folder, typecheck, eslint, check:astryx, affected e2e specs one at a time).
+- [ ] **Step 5: Commit** `fix(canvas): a quiet transparent scrollbar in screens and no id tooltip`.
+
+---
+
 ## Final verification (controller)
 
 Whole-plan review, then `pnpm typecheck`, lint, `check:astryx`, `test:colocation`, `test:workspace`, `pnpm test`, and each canvas e2e spec file alone with a hard timeout; relaunch nothing on port 3107 (the dev server there is live; just ⌘R in the Mac app).
