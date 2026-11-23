@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { applyTweak, inspectElement } from "@meld/screen-runtime/edit";
+import { shiftTag } from "./element-session";
 import { parseElementTag, remapTag } from "./element-tag";
 
 it("reads file, start and end, including paths with colons", () => {
@@ -52,5 +54,39 @@ describe("remapTag", () => {
   });
   it("grows an element that is the whole file", () => {
     expect(remapTag({ "a.html": "<b>x</b>" }, { "a.html": "<b>xx</b>" }, "a.html:0:8")).toBe("a.html:0:9");
+  });
+});
+
+describe("remapTag after a text-run edit (text next to a span)", () => {
+  const page = '<section>\n  <h2>FEATURED <span class="accent">BIKES.</span></h2>\n  <p>x</p>\n</section>';
+  const files = { "index.html": page };
+  const range = (text: string, open: string, close: string) => {
+    const start = text.indexOf(open);
+    return `index.html:${start}:${text.indexOf(close, start) + close.length}`;
+  };
+  const h2 = range(page, "<h2>", "</h2>");
+  const span = range(page, "<span", "</span>");
+  it.each([
+    ["replace", "NEW", "NEW"],
+    ["grow", "FEATURED FEATURED", "FEATURED FEATURED"],
+    ["empty", "", null],
+    ["no-op", "FEATURED", "FEATURED"],
+  ])("%s: the h2 follows the edit and its undo, and the span after the run stays pickable", (_name, typed, shown) => {
+    const result = applyTweak(files, h2, { field: "text", value: typed });
+    if (!result.ok) throw new Error(result.reason);
+    const after = result.files["index.html"];
+    const movedH2 = range(after, "<h2>", "</h2>");
+    // The hand-edit panel's shift (the edit is inside the element) and the history's remap agree with the file.
+    expect(shiftTag(h2, after.length - page.length)).toBe(movedH2);
+    expect(remapTag(files, result.files, h2)).toBe(movedH2);
+    expect(inspectElement(result.files, movedH2)?.text.value ?? null).toBe(shown);
+    // Undo puts the tag back where it was.
+    expect(remapTag(result.files, files, movedH2)).toBe(h2);
+    // The span after the edited run moves with it and can still be edited on its own.
+    const movedSpan = remapTag(files, result.files, span);
+    expect(movedSpan).toBe(range(after, "<span", "</span>"));
+    expect(inspectElement(result.files, movedSpan!)?.text).toEqual({ editable: true, value: "BIKES." });
+    const spanEdit = applyTweak(result.files, movedSpan!, { field: "text", value: "RIDES." });
+    expect(spanEdit.ok && spanEdit.files["index.html"]).toContain('<span class="accent">RIDES.</span></h2>');
   });
 });

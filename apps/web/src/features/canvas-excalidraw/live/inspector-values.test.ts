@@ -76,3 +76,15 @@ describe("familyKey with an unknown first font", () => {
     expect(familyKey("Fancy")).toBe("sans");
   });
 });
+
+describe("text content", () => {
+  it("keeps read-only text visible and hides only an element with no text", () => {
+    expect(displayValues(insp({ text: { editable: false, value: "RIDE …" } }), computed).text).toMatchObject({
+      editable: false,
+      value: "RIDE …",
+      hidden: false,
+    });
+    expect(displayValues(insp({ text: { editable: true, value: "" } }), computed).text).toMatchObject({ editable: true, hidden: false });
+    expect(displayValues(insp({ text: { editable: false, value: null } }), computed).text.hidden).toBe(true);
+  });
+});

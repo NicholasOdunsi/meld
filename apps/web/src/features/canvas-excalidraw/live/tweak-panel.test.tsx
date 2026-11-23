@@ -339,3 +339,40 @@ it("does not flag an untouched empty number box on blur or Enter, but still flag
   expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
   expect(onTweak).not.toHaveBeenCalled();
 });
+
+it("shows read-only text disabled with its note instead of hiding it", () => {
+  const { onTweak } = setup({ fields: fields({ text: { editable: false, value: "RIDE …" } }) });
+  const text = screen.getByRole("textbox", { name: "Text" });
+  expect(text).toBeDisabled();
+  expect(text).toHaveValue("RIDE …");
+  expect(text.closest("section")).toHaveTextContent("Set by the screen's code. Change it in Code.");
+  fireEvent.blur(text);
+  expect(onTweak).not.toHaveBeenCalled();
+});
+
+it("hides Content only when the element holds no text", () => {
+  setup({ fields: fields({ text: { editable: false, value: null } }) });
+  expect(screen.queryByRole("textbox", { name: "Text" })).toBeNull();
+});
+
+it("never applies an untouched focus and blur on text, even multi-line or with a no-break space", () => {
+  for (const value of ["\n      At VeloX, we believe\n      cycling is more.\n    ", "Fish & Chips\u00a0→ go", "  Our Story  "]) {
+    const { onTweak } = setup({ fields: fields({ text: { value } }) });
+    const text = screen.getByRole("textbox", { name: "Text" });
+    fireEvent.focus(text);
+    fireEvent.blur(text);
+    fireEvent.keyDown(text, { key: "Enter" });
+    expect(onTweak, JSON.stringify(value)).not.toHaveBeenCalled();
+    cleanup();
+  }
+});
+
+it("commits edited mixed-content text once", () => {
+  const { onTweak } = setup({ fields: fields({ text: { value: "FEATURED" } }) });
+  const text = screen.getByRole("textbox", { name: "Text" });
+  fireEvent.change(text, { target: { value: "  NEW  " } });
+  fireEvent.blur(text);
+  fireEvent.blur(text);
+  fireEvent.keyDown(text, { key: "Enter" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "NEW" });
+});

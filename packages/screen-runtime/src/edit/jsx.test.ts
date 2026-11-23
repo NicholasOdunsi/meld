@@ -162,3 +162,110 @@ describe("JSX literal editing", () => {
     ).toBe("other file");
   });
 });
+describe("JSX: one text run next to other children", () => {
+  const whole = (source: string) =>
+    locateJsx(source, { file: "App.tsx", start: 0, end: source.length });
+  const text = (source: string) => whole(source)?.inspect().text;
+  const write = (source: string, value: string) => {
+    const patch = whole(source)?.patch({ field: "text", value });
+    return patch ? spliceAt(source, patch) : null;
+  };
+  it.each([
+    [
+      '<h2>FEATURED <span className="accent">BIKES.</span></h2>',
+      "FEATURED",
+      "NEW",
+      '<h2>{"NEW "}<span className="accent">BIKES.</span></h2>',
+    ],
+    [
+      "<h2>\n  CHASE THE<br/>\n  <span>FREEDOM.</span>\n</h2>",
+      "CHASE THE",
+      "GO",
+      '<h2>\n  {"GO"}<br/>\n  <span>FREEDOM.</span>\n</h2>',
+    ],
+    [
+      "<h2>\n    READY TO <span>RIDE?</span>\n  </h2>",
+      "READY TO",
+      "SET TO",
+      '<h2>\n    {"SET TO "}<span>RIDE?</span>\n  </h2>',
+    ],
+    ["<a>Explore <svg/></a>", "Explore", "Shop", '<a>{"Shop "}<svg/></a>'],
+    [
+      "<button><svg/> Go</button>",
+      "Go",
+      "Stop",
+      '<button><svg/>{" Stop"}</button>',
+    ],
+    ["<li>Two <b>x</b></li>", "Two", "Three", '<li>{"Three "}<b>x</b></li>'],
+    [
+      "<p>{/* note */}Hello <b>x</b></p>",
+      "Hello",
+      "Bye",
+      '<p>{/* note */}{"Bye "}<b>x</b></p>',
+    ],
+    ['<p>{"Hi "}<b>x</b></p>', "Hi", "Yo", '<p>{"Yo "}<b>x</b></p>'],
+    [
+      "<p>\n   At VeloX\n   more\n  </p>",
+      "At VeloX more",
+      "Short",
+      '<p>\n   {"Short"}\n  </p>',
+    ],
+    [
+      "<p>a b <i>x</i></p>",
+      "a b",
+      'q < r & {s} "t"',
+      '<p>{"q < r & {s} \\"t\\" "}<i>x</i></p>',
+    ],
+  ])("edits the one run of %j", (source, shown, typed, result) => {
+    expect(text(source)).toEqual({ editable: true, value: shown });
+    expect(write(source, typed)).toBe(result);
+    expect(text(write(source, typed)!)).toEqual({
+      editable: true,
+      value: typed,
+    });
+    const patch = whole(source)!.patch({ field: "text", value: typed })!;
+    expect(patch.from).toBeGreaterThanOrEqual(source.indexOf(">") + 1);
+    expect(patch.to).toBeLessThanOrEqual(source.lastIndexOf("</"));
+  });
+  it("shows entities decoded", () => {
+    const source = "<p>Fish &amp; Chips&nbsp;&rarr; go <i>x</i></p>";
+    expect(text(source)).toEqual({
+      editable: true,
+      value: "Fish & Chips\u00a0→ go",
+    });
+    expect(write(source, "A & B")).toBe('<p>{"A & B "}<i>x</i></p>');
+  });
+  it("shows computed or several runs read-only with their static text", () => {
+    expect(text("<p>Hi {name}</p>")).toEqual({
+      editable: false,
+      value: "Hi …",
+    });
+    expect(text("<p>{name}</p>")).toEqual({ editable: false, value: "…" });
+    expect(text("<p>{`Hi`}</p>")).toEqual({ editable: false, value: "…" });
+    expect(text("<h1>RIDE<br/>BEYOND<br/><span>x</span></h1>")).toEqual({
+      editable: false,
+      value: "RIDE …",
+    });
+    expect(write("<p>Hi {name}</p>", "x")).toBeNull();
+  });
+  it("keeps whitespace-preserving text read-only unless editing it is lossless", () => {
+    expect(text("<pre>a  b</pre>")).toEqual({ editable: false, value: "a b" });
+    expect(
+      text('<p style={{whiteSpace:"pre-wrap"}}>a  b</p>')?.editable,
+    ).toBe(false);
+    expect(write("<pre>hello</pre>", "bye")).toBe('<pre>{"bye"}</pre>');
+  });
+  it("lets an emptied element take text again", () => {
+    expect(text("<p></p>")).toEqual({ editable: true, value: "" });
+    expect(write("<p></p>", "Hi")).toBe('<p>{"Hi"}</p>');
+    const cleared = write("<p>Hello</p>", "")!;
+    expect(cleared).toBe("<p></p>");
+    const multi = write("<p>\n  Hello\n</p>", "")!;
+    expect(text(multi)).toEqual({ editable: true, value: "" });
+    expect(write(multi, "Hi")).toBe('<p>\n  {"Hi"}\n</p>');
+  });
+  it("hides text for elements that hold none", () => {
+    for (const source of ["<p/>", "<div><p>a</p></div>", "<h2><span>X</span></h2>"])
+      expect(text(source)).toEqual({ editable: false, value: null });
+  });
+});

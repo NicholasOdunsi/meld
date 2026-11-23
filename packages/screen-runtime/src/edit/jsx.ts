@@ -1,11 +1,17 @@
 import { packages } from "@babel/standalone";
-import type { types as t } from "@babel/core";
+import type { NodePath, types as t } from "@babel/core";
 import {
   descriptor,
   emptyBindings,
   type Binding,
   type EditableNode,
 } from "./patch";
+import {
+  edges,
+  isBlank,
+  textBinding as runsBinding,
+  type Content,
+} from "./runs";
 import {
   changeUtility,
   cssValue,
@@ -35,38 +41,166 @@ function attributeValue(attr: t.JSXAttribute): t.Node | null {
     ? attr.value.expression
     : (attr.value ?? null);
 }
-function textBinding(node: t.JSXElement): Binding | null {
-  if (
-    [
-      "script",
-      "style",
-      "textarea",
-      "title",
-      "xmp",
-      "plaintext",
-      "noscript",
-      "iframe",
-    ].includes((node.openingElement.name as t.JSXIdentifier).name) ||
-    node.children.length !== 1
-  )
-    return null;
-  const child = node.children[0];
-  const value =
-    child.type === "JSXText"
-      ? child.value
-      : child.type === "JSXExpressionContainer" &&
-          child.expression.type === "StringLiteral"
-        ? child.expression.value
-        : null;
-  if (value === null || child.start == null || child.end == null) return null;
-  const from = child.start,
-    to = child.end;
-  return {
-    value,
-    make: (input) => ({ from, to, value: `{${JSON.stringify(input)}}` }),
-  };
+const rawTextTags = [
+  "script",
+  "style",
+  "textarea",
+  "title",
+  "xmp",
+  "plaintext",
+  "noscript",
+  "iframe",
+];
+// The string Babel makes of a JSX text child: lines trimmed where they meet a line break, blank
+// lines dropped, the rest joined with one space (Babel's cleanJSXElementLiteralChild).
+export function jsxTextValue(value: string): string {
+  const lines = value.split(/\r\n|\n|\r/);
+  let lastNonEmpty = 0;
+  lines.forEach((line, i) => {
+    if (/[^ \t]/.test(line)) lastNonEmpty = i;
+  });
+  let out = "";
+  lines.forEach((line, i) => {
+    let text = line.replace(/\t/g, " ");
+    if (i !== 0) text = text.replace(/^[ ]+/, "");
+    if (i !== lines.length - 1) text = text.replace(/[ ]+$/, "");
+    if (text) out += i === lastNonEmpty ? text : text + " ";
+  });
+  return out;
 }
-function bindingsFor(node: t.JSXElement): EditableNode {
+const lastBreak = /(?:\r\n|\n|\r)[ \t]*$/;
+const preTags = new Set(["pre", "listing", "plaintext"]);
+// Inline whiteSpace / white-space: pre* or a whitespace-pre* utility on the element or an ancestor.
+// Read from the opening tag's source, so it errs towards read-only.
+const preserving =
+  /whiteSpace\s*:\s*["'`](?:pre|break-spaces)|white-?[sS]pace-?[cC]ollapse\s*:\s*["'`]?(?:preserve|break-spaces)|white-space\s*:\s*(?:pre|break-spaces)|\bwhitespace-(?:pre|break-spaces)/;
+function preserves(source: string, path: NodePath<t.JSXElement>): boolean {
+  for (
+    let at: NodePath | null = path;
+    at;
+    at = at.parentPath as NodePath | null
+  ) {
+    if (!at.isJSXElement()) continue;
+    const opening = at.node.openingElement;
+    if (opening.name.type === "JSXIdentifier" && preTags.has(opening.name.name))
+      return true;
+    if (
+      opening.start != null &&
+      opening.end != null &&
+      preserving.test(source.slice(opening.start, opening.end))
+    )
+      return true;
+  }
+  return false;
+}
+function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
+  const node = path.node;
+  const content: Content = {
+    runs: [],
+    dynamic: 0,
+    elements: 0,
+    insert: null,
+    preserve: preserves(source, path),
+  };
+  // A blank {""} that typing can fill, if there is one.
+  let literalSlot: { from: number; to: number } | null = null;
+  for (const child of node.children) {
+    const from = child.start,
+      to = child.end;
+    if (child.type === "JSXElement" || child.type === "JSXFragment") {
+      content.elements += 1;
+      continue;
+    }
+    if (
+      child.type === "JSXExpressionContainer" &&
+      child.expression.type === "JSXEmptyExpression"
+    )
+      continue;
+    if (from == null || to == null) {
+      content.dynamic += 1;
+      continue;
+    }
+    if (child.type === "JSXText") {
+      const raw = source.slice(from, to);
+      const outer = edges(raw);
+      // Whitespace with a line break is layout only: it stays in the source as written.
+      const keepLead = /[\r\n]/.test(outer.lead) ? outer.lead : "";
+      const keepTrail = /[\r\n]/.test(outer.trail) ? outer.trail : "";
+      const text = jsxTextValue(child.value);
+      const inner = edges(text);
+      content.runs.push({
+        from,
+        to,
+        text,
+        write: (value) => {
+          const literal = inner.lead + value + inner.trail;
+          return (
+            keepLead +
+            (literal === "" ? "" : `{${JSON.stringify(literal)}}`) +
+            keepTrail
+          );
+        },
+      });
+      continue;
+    }
+    if (
+      child.type === "JSXExpressionContainer" &&
+      child.expression.type === "StringLiteral"
+    ) {
+      const text = child.expression.value;
+      const inner = edges(text);
+      if (literalSlot === null && isBlank(text)) literalSlot = { from, to };
+      content.runs.push({
+        from,
+        to,
+        text,
+        write: (value) => {
+          const literal = inner.lead + value + inner.trail;
+          return literal === "" ? "" : `{${JSON.stringify(literal)}}`;
+        },
+      });
+      continue;
+    }
+    content.dynamic += 1;
+  }
+  const closing = node.closingElement,
+    opening = node.openingElement;
+  if (closing && opening.end != null) {
+    let slot = literalSlot;
+    if (!slot) {
+      let at = opening.end;
+      const blank = content.runs[0];
+      if (blank) {
+        const raw = source.slice(blank.from, blank.to);
+        const index = raw.search(lastBreak);
+        at = blank.from + (index < 0 ? raw.length : index);
+      }
+      slot = { from: at, to: at };
+    }
+    const { from, to } = slot;
+    content.insert = (value) => ({
+      from,
+      to,
+      value:
+        value === "" ? source.slice(from, to) : `{${JSON.stringify(value)}}`,
+    });
+  }
+  return content;
+}
+function textBinding(
+  source: string,
+  path: NodePath<t.JSXElement>,
+): Binding | null {
+  const name = path.node.openingElement.name as t.JSXIdentifier;
+  return rawTextTags.includes(name.name)
+    ? null
+    : runsBinding(contentOf(source, path));
+}
+function bindingsFor(
+  source: string,
+  path: NodePath<t.JSXElement>,
+): EditableNode {
+  const node = path.node;
   const bindings = emptyBindings();
   const attrs = new Map<string, t.JSXAttribute>();
   for (const attr of node.openingElement.attributes) {
@@ -78,7 +212,7 @@ function bindingsFor(node: t.JSXElement): EditableNode {
       return descriptor(bindings);
     attrs.set(attr.name.name, attr);
   }
-  bindings.text = textBinding(node);
+  bindings.text = textBinding(source, path);
   const classAttr = attrs.get("className"),
     styleAttr = attrs.get("style");
   const classNode = classAttr ? attributeValue(classAttr) : null;
@@ -190,7 +324,7 @@ export function locateJsx(source: string, range: Range): EditableNode | null {
       sourceType: "unambiguous",
       plugins: /\.tsx?$/.test(range.file) ? ["typescript", "jsx"] : ["jsx"],
     });
-    let found: t.JSXElement | null = null;
+    let found: NodePath<t.JSXElement> | null = null;
     packages.traverse.default(ast, {
       JSXElement(path) {
         const node = path.node,
@@ -201,12 +335,12 @@ export function locateJsx(source: string, range: Range): EditableNode | null {
           node.start === range.start &&
           node.end === range.end
         ) {
-          found = node;
+          found = path;
           path.stop();
         }
       },
     });
-    return found ? bindingsFor(found) : null;
+    return found ? bindingsFor(source, found) : null;
   } catch {
     return null;
   }

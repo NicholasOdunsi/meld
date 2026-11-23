@@ -36,6 +36,11 @@ const NUMBER_LABEL = {
 type NumberField = keyof typeof NUMBER_LABEL;
 // Digits only (an optional "px" is stripped first), so the "whole number" wording is true.
 const WHOLE_NUMBER = /^\d+$/;
+// Text as a reader sees it: HTML whitespace runs are one space, none at the edges. A no-break
+// space is text, so it is kept (a JS trim() would drop it and turn an untouched blur into an edit).
+function visibleText(text: string): string {
+  return text.replace(/[ \t\n\r\f]+/g, " ").replace(/^ | $/g, "");
+}
 
 function LiteralField({
   field,
@@ -61,12 +66,13 @@ function LiteralField({
   const { text: value, setText: setValue, submitted, setSubmitted, invalid: error, setInvalid: setError } = useFieldText(view.value ?? "", selectionKey);
   const errorId = useId();
   function commit(raw: string = value) {
-    const next = isNumber ? raw.trim().replace(/px$/i, "").trim() : raw.trim();
+    const next = isNumber ? raw.trim().replace(/px$/i, "").trim() : visibleText(raw);
     // While the last change is still being applied, typed text waits for the next Enter or blur.
     if (!view.editable || isPending) return;
     // Nothing new (an untouched box, even an empty one): not an error, and nothing to apply.
     // The box shows what was applied ("9px" becomes "9"), so it follows later value changes.
-    if (next === submitted) {
+    // Text compares as it reads, so a multi-line source value is not rewritten by a focus and blur.
+    if (next === (isNumber ? submitted : visibleText(submitted))) {
       setValue(next);
       setError(false);
       return;

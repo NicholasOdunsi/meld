@@ -6,6 +6,7 @@ import {
   type EditableNode,
   type Patch,
 } from "./patch";
+import { edges, textBinding, type Content } from "./runs";
 import {
   changeUtility,
   cssValue,
@@ -103,6 +104,82 @@ function declarations(value: string): Root | null {
 function dynamic(value: string): boolean {
   return /(?:var|calc|env|attr)\s*\(/i.test(value) || /\\|\/\*/.test(value);
 }
+const voidTags = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+const preTags = new Set(["pre", "listing", "plaintext"]);
+const preStyle =
+  /white-space\s*:\s*(?:pre|break-spaces)|white-space-collapse\s*:\s*(?:preserve|break-spaces)/i;
+const preClass = /^(?:[^\s:]+:)*!?whitespace-(?:pre|break-spaces)/;
+// Text inside <pre> or white-space: pre* shows its whitespace as written. Only inline styles and
+// utility classes can be seen here; a stylesheet rule cannot.
+function preserves(node: Element): boolean {
+  for (let at: Node | null = node; at && "tagName" in at; at = at.parentNode) {
+    if (preTags.has(at.tagName)) return true;
+    for (const { name, value } of at.attrs) {
+      if (name === "style" && preStyle.test(value)) return true;
+      if (name === "class" && value.split(/\s+/).some((t) => preClass.test(t)))
+        return true;
+    }
+  }
+  return false;
+}
+// The final line break and the indentation after it, in a run of whitespace.
+const lastBreak = /(?:\r\n|\n|\r)[ \t\f]*$/;
+function contentOf(source: string, node: Element): Content {
+  const location = node.sourceCodeLocation!;
+  const content: Content = {
+    runs: [],
+    dynamic: 0,
+    elements: 0,
+    insert: null,
+    preserve: preserves(node),
+  };
+  for (const child of node.childNodes) {
+    if (child.nodeName === "#comment") continue;
+    if (child.nodeName !== "#text" || !("value" in child)) {
+      content.elements += 1;
+      continue;
+    }
+    const at = child.sourceCodeLocation;
+    if (!at) {
+      content.dynamic += 1;
+      continue;
+    }
+    const from = at.startOffset,
+      to = at.endOffset;
+    const { lead, trail } = edges(source.slice(from, to));
+    content.runs.push({
+      from,
+      to,
+      text: child.value,
+      write: (value) => lead + htmlText(value) + trail,
+    });
+  }
+  if (!voidTags.has(node.tagName) && location.endTag && location.startTag) {
+    const blank = content.runs[0];
+    let at = location.startTag.endOffset;
+    if (blank) {
+      const raw = source.slice(blank.from, blank.to);
+      const index = raw.search(lastBreak);
+      at = blank.from + (index < 0 ? raw.length : index);
+    }
+    content.insert = (value) => ({ from: at, to: at, value: htmlText(value) });
+  }
+  return content;
+}
 function bindingsFor(source: string, node: Element): EditableNode {
   const bindings = emptyBindings(),
     location = node.sourceCodeLocation!;
@@ -128,24 +205,8 @@ function bindingsFor(source: string, node: Element): EditableNode {
       value: " " + name + "=" + quoted(value),
     };
   };
-  if (!rawText.has(node.tagName) && node.childNodes.length === 1) {
-    const child = node.childNodes[0];
-    if (
-      child.nodeName === "#text" &&
-      "value" in child &&
-      child.sourceCodeLocation
-    ) {
-      const { startOffset: from, endOffset: to } = child.sourceCodeLocation;
-      bindings.text = {
-        value: child.value,
-        make: (value) => ({
-          from,
-          to,
-          value: htmlText(value),
-        }),
-      };
-    }
-  }
+  if (!rawText.has(node.tagName) && node.tagName !== "template")
+    bindings.text = textBinding(contentOf(source, node));
   const className = attr("class"),
     style = attr("style");
   const css = style === undefined ? postcss.root() : declarations(style);

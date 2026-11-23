@@ -29,11 +29,12 @@ describe("source editing API", () => {
     (extension) => {
       const file = `ui/App.${extension}`;
       const source = jsxPrefix + "<b>ok</b>";
-      const value = 'Click {here} & "say" \\ 😀\n';
+      // The Text field's value is trimmed: the trailing line break is not written.
+      const value = 'Click {here} & "say" \\ 😀';
       const first = applyTweak(
         { [file]: source },
         tag(file, source, jsxPrefix.length),
-        { field: "text", value },
+        { field: "text", value: value + "\n" },
       );
       expect(first).toEqual({
         ok: true,

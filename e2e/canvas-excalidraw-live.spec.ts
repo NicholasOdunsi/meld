@@ -1198,3 +1198,62 @@ test("a screen that posts undo reports in a loop cannot undo the person's edits,
   await page.keyboard.press("Meta+z");
   await expect.poll(() => computed(button, "font-weight")).toBe(original);
 });
+
+// ---- Text next to other elements (the owner's bike-shop headings) ----
+
+const bikeHeadings = `<!doctype html>
+<html><head><style>
+  body { font-family: sans-serif; }
+  h2 span, h1 span { color: rgb(255, 90, 31); }
+</style></head>
+<body><main>
+  <h2>FEATURED <span class="accent">BIKES.</span></h2>
+  <h2>
+    CHASE THE<br>
+    <span class="accent">FREEDOM.</span>
+  </h2>
+  <h2>
+    READY TO <span class="accent">RIDE?</span>
+  </h2>
+  <h1>RIDE<br>BEYOND<br><span>LIMITS.</span></h1>
+</main></body></html>`;
+
+test("text next to a span is editable on its own, undoes, and leaves the span pickable", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, bikeHeadings, "Desktop");
+  await expect(page.locator("iframe[data-orion-live]")).toBeVisible();
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const panel = page.getByTestId("live-panel");
+  const featured = app.locator("h2").first();
+  const accent = featured.locator("span.accent");
+  await expect(featured).toHaveText("FEATURED BIKES.");
+  await toggleEdit(page, true);
+  // Click the heading's own text, left of the span.
+  await featured.click({ position: { x: 4, y: 4 } });
+  await expect(panel).toBeVisible();
+  const text = panel.getByRole("textbox", { name: "Text", exact: true });
+  await expect(text).toHaveValue("FEATURED");
+  await expect(text).toBeEnabled();
+  await text.fill("NEW");
+  await text.press("Enter");
+  await expect(app.locator("h2").first()).toHaveText("NEW BIKES.");
+  await expect.poll(() => computed(app.locator("h2 span.accent").first(), "color")).toBe("rgb(255, 90, 31)");
+  await expect(text).toHaveValue("NEW");
+
+  await pillButton(page, "Undo").click();
+  await expect(app.locator("h2").first()).toHaveText("FEATURED BIKES.");
+  await expect(text).toHaveValue("FEATURED");
+
+  // The span is its own element: picked and edited separately.
+  await accent.click();
+  await expect(text).toHaveValue("BIKES.");
+  await text.fill("RIDES.");
+  await text.press("Enter");
+  await expect(app.locator("h2").first()).toHaveText("FEATURED RIDES.");
+
+  // Two text runs (RIDE<br>BEYOND<br>...) are shown read-only with the reason, not hidden.
+  await app.locator("h1").click({ position: { x: 4, y: 4 } });
+  await expect(text).toHaveValue("RIDE …");
+  await expect(text).toBeDisabled();
+  await expect(panel.getByText("Set by the screen's code. Change it in Code.").first()).toBeVisible();
+});
