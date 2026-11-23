@@ -10,11 +10,13 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { VStack } from "@astryxdesign/core/VStack";
+import { Theme } from "@astryxdesign/core/theme";
 import type { FormFactor } from "@meld/prototype";
 import type { CompileError, CompileResult } from "@meld/screen-runtime";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import type { PasteInput } from "./create-pasted-screen";
 import { detectScreenKind } from "./detect-kind";
+import { pasteTheme } from "./paste-theme";
 import { buildPastedSource, stylesheetNotice } from "./paste-source";
 
 import "./paste-dialog.css";
@@ -71,38 +73,40 @@ export function PasteDialog({ isOpen, onOpenChange, compile, onCreate, onNotice 
   return (
     <Dialog isOpen={isOpen} onOpenChange={onOpenChange} purpose="form" width={460}>
       <DialogHeader title="Paste code" subtitle="React or plain HTML. Tailwind and Lucide icons are built in." hasDivider={false} />
-      <VStack className="orion-paste" gap={3} padding={4}>
-        <SegmentedControl label="Device" layout="fill" value={formFactor} onChange={(value) => setFormFactor(value as FormFactor)}>
-          {FORM_FACTOR_CHOICES.map((choice) => {
-            const Icon = FORM_FACTOR_ICONS[choice.value];
-            return <SegmentedControlItem key={choice.value} value={choice.value} label={choice.label} icon={<Icon size={16} />} />;
-          })}
-        </SegmentedControl>
-        <TextArea
-          label="Code"
-          isLabelHidden
-          value={code}
-          rows={12}
-          hasSpellCheck={false}
-          placeholder="Paste a React component or an HTML page"
-          status={problem ? { type: "error", message: problem } : undefined}
-          onChange={(value) => { setCode(value); setProblem(null); setErrors([]); }}
-        />
-        {errors.length ? (
-          <VStack gap={1}>
-            <Banner status="error" title={errors.length === 1 ? "This code can't run yet" : `This code can't run yet (${errors.length} problems)`} />
-            <List density="compact">
-              {errors.map((error, index) => (
-                <ListItem key={`${index}-${error.message}`} label={error.message} description={error.file || undefined} />
-              ))}
-            </List>
-          </VStack>
-        ) : null}
-        <HStack className="orion-paste-actions" gap={2}>
-          <Button label="Cancel" variant="secondary" size="lg" width="100%" onClick={() => onOpenChange(false)} />
-          <Button label={busy ? "Checking…" : "Create"} variant="primary" size="lg" width="100%" isDisabled={busy} onClick={() => void submit()} />
-        </HStack>
-      </VStack>
+      <Theme theme={pasteTheme}>
+        <VStack className="orion-paste" gap={3} padding={4}>
+          <SegmentedControl label="Device" layout="fill" value={formFactor} onChange={(value) => setFormFactor(value as FormFactor)}>
+            {FORM_FACTOR_CHOICES.map((choice) => {
+              const Icon = FORM_FACTOR_ICONS[choice.value];
+              return <SegmentedControlItem key={choice.value} value={choice.value} label={choice.label} icon={<Icon size={16} />} />;
+            })}
+          </SegmentedControl>
+          <TextArea
+            label="Code"
+            isLabelHidden
+            value={code}
+            rows={12}
+            hasSpellCheck={false}
+            placeholder="Paste a React component or an HTML page"
+            status={problem ? { type: "error", message: problem } : undefined}
+            onChange={(value) => { setCode(value); setProblem(null); setErrors([]); }}
+          />
+          {errors.length ? (
+            <VStack gap={1}>
+              <Banner status="error" title={errors.length === 1 ? "This code can't run yet" : `This code can't run yet (${errors.length} problems)`} />
+              <List density="compact">
+                {errors.map((error, index) => (
+                  <ListItem key={`${index}-${error.message}`} label={error.message} description={error.file || undefined} />
+                ))}
+              </List>
+            </VStack>
+          ) : null}
+          <HStack className="orion-paste-actions" gap={2}>
+            <Button label="Cancel" variant="secondary" size="lg" width="100%" onClick={() => onOpenChange(false)} />
+            <Button label={busy ? "Checking…" : "Create"} variant="primary" size="lg" width="100%" isDisabled={busy} onClick={() => void submit()} />
+          </HStack>
+        </VStack>
+      </Theme>
     </Dialog>
   );
 }

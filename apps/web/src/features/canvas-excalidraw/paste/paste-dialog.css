@@ -9,8 +9,8 @@
    grey, so the dialog carries the brand colour itself. Dark text, because
    white on this bright blue is hard to read. */
 .orion-paste {
-  --orion-blue: #00e1f3;
-  --orion-on-blue: #04222b;
+  --orion-blue: var(--color-accent);
+  --orion-on-blue: var(--color-on-accent);
 }
 
 html .astryx-dialog[data-variant]:has(.orion-paste) {
