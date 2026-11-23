@@ -289,9 +289,73 @@ describe("one text run next to other children", () => {
       "<img>",
       "<br>",
       "<div><p>a</p><p>b</p></div>",
-      "<h2><span>X</span></h2>",
       "<div>\n  <p>a</p>\n</div>",
+      "<div>\n  <i>x</i>\n</div>",
+      "<section> <b>x</b></section>",
+      "<ul>\n  <li>a</li>\n</ul>",
+      "<nav>\n  <a>x</a>\n</nav>",
     ])
       expect(text(source)).toEqual({ editable: false, value: null });
+  });
+  it("never offers an empty Text field on replaced, foreign or structural elements", () => {
+    for (const source of [
+      "<div></div>",
+      "<ul></ul>",
+      "<select></select>",
+      "<svg></svg>",
+      "<canvas></canvas>",
+      "<video></video>",
+      "<iframe></iframe>",
+      "<object></object>",
+    ])
+      expect(text(source)?.editable, source).toBe(source === "<div></div>");
+    const table = "<table><tr></tr></table>";
+    expect(
+      text(table, table.indexOf("<tr>"), table.indexOf("</table>"))?.editable,
+    ).toBe(false);
+    const svg = "<svg><path></path><text></text></svg>";
+    expect(
+      text(svg, svg.indexOf("<path>"), svg.indexOf("<text>"))?.editable,
+    ).toBe(false);
+    expect(
+      text(svg, svg.indexOf("<text>"), svg.indexOf("</svg>")),
+    ).toEqual({ editable: true, value: "" });
+  });
+  it.each([
+    [
+      '<h2>FEATURED <span class="accent">BIKES.</span></h2>',
+      '<h2> <span class="accent">BIKES.</span></h2>',
+      '<h2>NEW <span class="accent">BIKES.</span></h2>',
+    ],
+    [
+      '<h2>\n    READY TO <span class="accent">RIDE?</span>\n  </h2>',
+      '<h2>\n     <span class="accent">RIDE?</span>\n  </h2>',
+      '<h2>\n     NEW<span class="accent">RIDE?</span>\n  </h2>',
+    ],
+    [
+      "<h2>\n  CHASE THE<br>\n  <span>FREEDOM.</span>\n</h2>",
+      "<h2>\n  <br>\n  <span>FREEDOM.</span>\n</h2>",
+      "<h2>\n  NEW<br>\n  <span>FREEDOM.</span>\n</h2>",
+    ],
+    [
+      '<a class="logo">VELO<span>X</span></a>',
+      '<a class="logo"><span>X</span></a>',
+      '<a class="logo">NEW<span>X</span></a>',
+    ],
+    [
+      "<button><svg></svg> Go</button>",
+      "<button><svg></svg> </button>",
+      "<button><svg></svg> NEW</button>",
+    ],
+  ])("a cleared run next to an element takes text again: %j", (source, cleared, typed) => {
+    expect(edit(source, "text", "")).toBe(cleared);
+    expect(text(cleared)).toEqual({ editable: true, value: "" });
+    expect(edit(cleared, "text", "NEW")).toBe(typed);
+    expect(text(typed)).toEqual({ editable: true, value: "NEW" });
+    // The typed text lands inside the element, before its end tag.
+    const patch = node(cleared)!.patch({ field: "text", value: "NEW" })!;
+    expect(patch.from).toBeGreaterThanOrEqual(cleared.indexOf(">") + 1);
+    expect(patch.to).toBeLessThanOrEqual(cleared.lastIndexOf("</"));
+    expect(edit(cleared, "text", "")).toBe(cleared);
   });
 });

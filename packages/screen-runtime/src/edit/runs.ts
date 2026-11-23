@@ -44,7 +44,108 @@ export type Content = {
   insert: ((value: string) => Patch) | null;
   // Whitespace is shown as written (<pre>, white-space: pre*): only lossless edits are allowed.
   preserve: boolean;
+  // The tag holds running text (a heading, a paragraph, a link...): once its text next to other
+  // elements is cleared it still takes text, where a layout container (div, section, ul) does not.
+  textTag: boolean;
 };
+
+// Tags whose text sits next to inline elements (FEATURED <span>BIKES.</span>): clearing that text
+// leaves only whitespace and the span, and the Text field must stay so it can be typed again.
+export const TEXT_TAGS = new Set([
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "p",
+  "a",
+  "button",
+  "li",
+  "span",
+  "label",
+  "td",
+  "th",
+  "b",
+  "i",
+  "strong",
+  "em",
+  "small",
+  "u",
+  "s",
+  "mark",
+  "q",
+  "cite",
+  "sub",
+  "sup",
+  "abbr",
+  "dt",
+  "dd",
+  "figcaption",
+  "caption",
+  "legend",
+  "summary",
+  "blockquote",
+]);
+// Replaced, foreign and structural elements: text typed into an empty one would be invisible or
+// invalid (an <svg>, a <select>, a <tr>), so they never offer an empty Text field.
+export const NO_TEXT_TAGS = new Set([
+  "svg",
+  "math",
+  "canvas",
+  "iframe",
+  "video",
+  "audio",
+  "picture",
+  "object",
+  "embed",
+  "img",
+  "input",
+  "select",
+  "datalist",
+  "optgroup",
+  "textarea",
+  "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "colgroup",
+  "col",
+  "ul",
+  "ol",
+  "dl",
+  "menu",
+  "map",
+  "template",
+  "slot",
+]);
+export const VOID_TAGS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "source",
+  "track",
+  "wbr",
+]);
+// Inside an <svg> only these draw text.
+export const SVG_TEXT_TAGS = new Set(["text", "tspan", "textPath"]);
+
+// Where typed text goes in a blank run: after its first line break and indentation (so
+// "\n  \n" becomes "\n  NEW\n"); without a line break, before the space when an element follows
+// (" <span>" becomes "NEW <span>") and after it when the run is last ("<svg/> " becomes "<svg/> NEW").
+export function blankInsertOffset(raw: string, elementFollows: boolean): number {
+  const lineBreak = /(?:\r\n|\n|\r)[ \t\f]*/.exec(raw);
+  if (lineBreak) return lineBreak.index + lineBreak[0].length;
+  return elementFollows ? 0 : raw.length;
+}
 
 export function nonBlankRuns(content: Content): Run[] {
   return content.runs.filter((run) => !isBlank(run.text));
@@ -52,10 +153,13 @@ export function nonBlankRuns(content: Content): Run[] {
 
 // The Text field's binding: editable when the element has exactly one non-blank text run and nothing
 // computed; read-only (make: null) with its static text when it has more; null when it holds no text.
+// An element with only blank text takes typed text when it is empty, or when it is a text tag whose
+// text next to other elements was cleared.
 export function textBinding(content: Content): Binding | null {
   const runs = nonBlankRuns(content);
   if (runs.length === 0 && content.dynamic === 0) {
-    if (content.elements > 0 || !content.insert) return null;
+    if (!content.insert || (content.elements > 0 && !content.textTag))
+      return null;
     const insert = content.insert;
     return {
       value: "",

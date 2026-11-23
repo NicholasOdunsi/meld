@@ -69,7 +69,8 @@ describe("remapTag after a text-run edit (text next to a span)", () => {
   it.each([
     ["replace", "NEW", "NEW"],
     ["grow", "FEATURED FEATURED", "FEATURED FEATURED"],
-    ["empty", "", null],
+    // Cleared, the h2 keeps an empty, editable Text field (see the next test).
+    ["empty", "", ""],
     ["no-op", "FEATURED", "FEATURED"],
   ])("%s: the h2 follows the edit and its undo, and the span after the run stays pickable", (_name, typed, shown) => {
     const result = applyTweak(files, h2, { field: "text", value: typed });
@@ -89,4 +90,34 @@ describe("remapTag after a text-run edit (text next to a span)", () => {
     const spanEdit = applyTweak(result.files, movedSpan!, { field: "text", value: "RIDES." });
     expect(spanEdit.ok && spanEdit.files["index.html"]).toContain('<span class="accent">RIDES.</span></h2>');
   });
+});
+
+it("clearing the run next to the span keeps the h2 editable: typing again needs no Undo, and the span follows", () => {
+  const page = '<section>\n  <h2>FEATURED <span class="accent">BIKES.</span></h2>\n</section>';
+  const files = { "index.html": page };
+  const range = (text: string, open: string, close: string) => {
+    const start = text.indexOf(open);
+    return `index.html:${start}:${text.indexOf(close, start) + close.length}`;
+  };
+  const h2 = range(page, "<h2>", "</h2>");
+  const span = range(page, "<span", "</span>");
+  const cleared = applyTweak(files, h2, { field: "text", value: "" });
+  if (!cleared.ok) throw new Error(cleared.reason);
+  const clearedH2 = shiftTag(h2, cleared.files["index.html"].length - page.length);
+  expect(clearedH2).toBe(range(cleared.files["index.html"], "<h2>", "</h2>"));
+  expect(inspectElement(cleared.files, clearedH2)?.text).toEqual({ editable: true, value: "" });
+
+  const typed = applyTweak(cleared.files, clearedH2, { field: "text", value: "NEW" });
+  if (!typed.ok) throw new Error(typed.reason);
+  const after = typed.files["index.html"];
+  expect(after).toContain('<h2>NEW <span class="accent">BIKES.</span></h2>');
+  const typedH2 = shiftTag(clearedH2, after.length - cleared.files["index.html"].length);
+  expect(typedH2).toBe(range(after, "<h2>", "</h2>"));
+  expect(remapTag(cleared.files, typed.files, clearedH2)).toBe(typedH2);
+  expect(inspectElement(typed.files, typedH2)?.text).toEqual({ editable: true, value: "NEW" });
+  // The span moved twice and is still its own element; undoing both steps puts every tag back.
+  const spanNow = remapTag(cleared.files, typed.files, remapTag(files, cleared.files, span)!);
+  expect(spanNow).toBe(range(after, "<span", "</span>"));
+  expect(remapTag(typed.files, cleared.files, typedH2)).toBe(clearedH2);
+  expect(remapTag(cleared.files, files, clearedH2)).toBe(h2);
 });

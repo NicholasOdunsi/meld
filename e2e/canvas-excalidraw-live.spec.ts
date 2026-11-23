@@ -1251,6 +1251,19 @@ test("text next to a span is editable on its own, undoes, and leaves the span pi
   await text.press("Enter");
   await expect(app.locator("h2").first()).toHaveText("FEATURED RIDES.");
 
+  // Clearing FEATURED keeps the Text field: typing again works without Undo, the span intact.
+  await featured.click({ position: { x: 4, y: 4 } });
+  await expect(text).toHaveValue("FEATURED");
+  await text.fill("");
+  await text.press("Enter");
+  await expect(app.locator("h2").first()).toHaveText("RIDES.");
+  await expect(text).toBeEnabled();
+  await expect(text).toHaveValue("");
+  await text.fill("NEW");
+  await text.press("Enter");
+  await expect(app.locator("h2").first()).toHaveText("NEW RIDES.");
+  await expect.poll(() => computed(app.locator("h2 span.accent").first(), "color")).toBe("rgb(255, 90, 31)");
+
   // Two text runs (RIDE<br>BEYOND<br>...) are shown read-only with the reason, not hidden.
   await app.locator("h1").click({ position: { x: 4, y: 4 } });
   await expect(text).toHaveValue("RIDE …");

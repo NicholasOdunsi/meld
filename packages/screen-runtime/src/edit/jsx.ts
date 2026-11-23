@@ -7,10 +7,16 @@ import {
   type EditableNode,
 } from "./patch";
 import {
+  blankInsertOffset,
   edges,
   isBlank,
+  NO_TEXT_TAGS,
+  SVG_TEXT_TAGS,
+  TEXT_TAGS,
   textBinding as runsBinding,
+  VOID_TAGS,
   type Content,
+  type Run,
 } from "./runs";
 import {
   changeUtility,
@@ -68,10 +74,27 @@ export function jsxTextValue(value: string): string {
   });
   return out;
 }
-const lastBreak = /(?:\r\n|\n|\r)[ \t]*$/;
+// Whether typing may go into this element when it has no text: not a void, replaced, foreign or
+// structural element (inside an <svg>, only its text elements).
+function takesText(path: NodePath<t.JSXElement>): boolean {
+  const name = (path.node.openingElement.name as t.JSXIdentifier).name;
+  if (VOID_TAGS.has(name) || NO_TEXT_TAGS.has(name)) return false;
+  for (
+    let at = path.parentPath as NodePath | null;
+    at;
+    at = at.parentPath as NodePath | null
+  ) {
+    if (!at.isJSXElement()) continue;
+    const parent = at.node.openingElement.name;
+    if (parent.type === "JSXIdentifier" && parent.name === "svg")
+      return SVG_TEXT_TAGS.has(name);
+  }
+  return true;
+}
 const preTags = new Set(["pre", "listing", "plaintext"]);
 // Inline whiteSpace / white-space: pre* or a whitespace-pre* utility on the element or an ancestor.
-// Read from the opening tag's source, so it errs towards read-only.
+// Read from the opening tag's source, so it errs towards read-only. A white-space: pre* rule in a
+// stylesheet cannot be seen from the element's source, so such text is treated as normal flow.
 const preserving =
   /whiteSpace\s*:\s*["'`](?:pre|break-spaces)|white-?[sS]pace-?[cC]ollapse\s*:\s*["'`]?(?:preserve|break-spaces)|white-space\s*:\s*(?:pre|break-spaces)|\bwhitespace-(?:pre|break-spaces)/;
 function preserves(source: string, path: NodePath<t.JSXElement>): boolean {
@@ -101,9 +124,13 @@ function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
     elements: 0,
     insert: null,
     preserve: preserves(source, path),
+    textTag: TEXT_TAGS.has(
+      (node.openingElement.name as t.JSXIdentifier).name,
+    ),
   };
-  // A blank {""} that typing can fill, if there is one.
-  let literalSlot: { from: number; to: number } | null = null;
+  // Blank runs typing can fill: whether they render a space (a {" "} or a one-line " "), and how
+  // many elements come before them.
+  const blanks: { run: Run; renders: boolean; before: number }[] = [];
   for (const child of node.children) {
     const from = child.start,
       to = child.end;
@@ -128,7 +155,7 @@ function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
       const keepTrail = /[\r\n]/.test(outer.trail) ? outer.trail : "";
       const text = jsxTextValue(child.value);
       const inner = edges(text);
-      content.runs.push({
+      const run: Run = {
         from,
         to,
         text,
@@ -140,7 +167,10 @@ function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
             keepTrail
           );
         },
-      });
+      };
+      content.runs.push(run);
+      if (isBlank(text))
+        blanks.push({ run, renders: text !== "", before: content.elements });
       continue;
     }
     if (
@@ -149,8 +179,7 @@ function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
     ) {
       const text = child.expression.value;
       const inner = edges(text);
-      if (literalSlot === null && isBlank(text)) literalSlot = { from, to };
-      content.runs.push({
+      const run: Run = {
         from,
         to,
         text,
@@ -158,32 +187,43 @@ function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
           const literal = inner.lead + value + inner.trail;
           return literal === "" ? "" : `{${JSON.stringify(literal)}}`;
         },
-      });
+      };
+      content.runs.push(run);
+      if (isBlank(text))
+        blanks.push({ run, renders: true, before: content.elements });
       continue;
     }
     content.dynamic += 1;
   }
   const closing = node.closingElement,
     opening = node.openingElement;
-  if (closing && opening.end != null) {
-    let slot = literalSlot;
-    if (!slot) {
-      let at = opening.end;
-      const blank = content.runs[0];
-      if (blank) {
-        const raw = source.slice(blank.from, blank.to);
-        const index = raw.search(lastBreak);
-        at = blank.from + (index < 0 ? raw.length : index);
+  if (closing && opening.end != null && takesText(path)) {
+    // Only used when every run is blank. A run that renders a space ({" "}, or " " on one line) is
+    // rewritten as one literal with the typed text before or after the space, never leaving a stray
+    // {" "}; layout whitespace (with a line break) gets the literal after its first line break.
+    const slot = blanks.find((blank) => blank.renders) ?? blanks[0];
+    const at = opening.end;
+    content.insert = (value) => {
+      if (!slot)
+        return {
+          from: at,
+          to: at,
+          value: value === "" ? "" : `{${JSON.stringify(value)}}`,
+        };
+      const { run } = slot;
+      if (value === "")
+        return { from: run.from, to: run.to, value: source.slice(run.from, run.to) };
+      if (slot.renders) {
+        const follows = content.elements > slot.before;
+        return {
+          from: run.from,
+          to: run.to,
+          value: `{${JSON.stringify(follows ? value + run.text : run.text + value)}}`,
+        };
       }
-      slot = { from: at, to: at };
-    }
-    const { from, to } = slot;
-    content.insert = (value) => ({
-      from,
-      to,
-      value:
-        value === "" ? source.slice(from, to) : `{${JSON.stringify(value)}}`,
-    });
+      const offset = run.from + blankInsertOffset(source.slice(run.from, run.to), true);
+      return { from: offset, to: offset, value: `{${JSON.stringify(value)}}` };
+    };
   }
   return content;
 }

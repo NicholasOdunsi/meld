@@ -50,11 +50,18 @@ describe("text runs", () => {
       elements: 0,
       insert: null,
       preserve: false,
+      textTag: false,
       ...over,
     });
     expect(textBinding(content({ runs: [run("a"), run("b")] }))).toMatchObject({ value: "a …", make: null });
     expect(textBinding(content({ dynamic: 1 }))).toMatchObject({ value: "…", make: null });
     expect(textBinding(content({ elements: 2, runs: [run(" ")] }))).toBeNull();
     expect(textBinding(content({}))).toBeNull();
+    // Only blank text next to elements: a text tag still takes typing, a layout container does not.
+    const insert = (value: string) => ({ from: 0, to: 0, value });
+    expect(textBinding(content({ elements: 1, runs: [run(" ")], insert }))).toBeNull();
+    expect(
+      textBinding(content({ elements: 1, runs: [run(" ")], insert, textTag: true })),
+    ).toMatchObject({ value: "" });
   });
 });

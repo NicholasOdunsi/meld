@@ -1,3 +1,4 @@
+import { packages } from "@babel/standalone";
 import { describe, expect, it } from "vitest";
 import { locateJsx } from "./jsx";
 import { spliceAt } from "./patch";
@@ -32,7 +33,7 @@ describe("JSX literal editing", () => {
     ).toBeNull();
   });
   it("rejects computed, nested and mixed text", () => {
-    for (const text of ["{name}", "<i>x</i>", 'hi {"x"}'])
+    for (const text of ["{name}", 'hi {"x"}'])
       expect(locate("<b>" + text + "</b>")?.inspect().text.editable).toBe(
         false,
       );
@@ -265,7 +266,76 @@ describe("JSX: one text run next to other children", () => {
     expect(write(multi, "Hi")).toBe('<p>\n  {"Hi"}\n</p>');
   });
   it("hides text for elements that hold none", () => {
-    for (const source of ["<p/>", "<div><p>a</p></div>", "<h2><span>X</span></h2>"])
+    for (const source of [
+      "<p/>",
+      "<div><p>a</p></div>",
+      "<div>\n  <i>x</i>\n</div>",
+      "<section>{\" \"}<b>x</b></section>",
+      "<ul>\n  <li>a</li>\n</ul>",
+    ])
       expect(text(source)).toEqual({ editable: false, value: null });
+  });
+  it("never offers an empty Text field on replaced, foreign or structural elements", () => {
+    for (const source of [
+      "<div></div>",
+      "<ul></ul>",
+      "<select></select>",
+      "<tr></tr>",
+      "<svg></svg>",
+      "<canvas></canvas>",
+      "<video></video>",
+      "<iframe></iframe>",
+    ])
+      expect(text(source)?.editable, source).toBe(
+        source === "<div></div>",
+      );
+    const svg = "<svg><path></path><text></text></svg>";
+    const at = (open: string, close: string) =>
+      locateJsx(svg, {
+        file: "App.tsx",
+        start: svg.indexOf(open),
+        end: svg.indexOf(close) + close.length,
+      })?.inspect().text;
+    expect(at("<path>", "</path>")).toEqual({ editable: false, value: null });
+    expect(at("<text>", "</text>")).toEqual({ editable: true, value: "" });
+  });
+  it.each([
+    [
+      '<h2>FEATURED <span className="accent">BIKES.</span></h2>',
+      '<h2>{" "}<span className="accent">BIKES.</span></h2>',
+      '<h2>{"NEW "}<span className="accent">BIKES.</span></h2>',
+    ],
+    [
+      "<h2>\n    READY TO <span>RIDE?</span>\n  </h2>",
+      '<h2>\n    {" "}<span>RIDE?</span>\n  </h2>',
+      '<h2>\n    {"NEW "}<span>RIDE?</span>\n  </h2>',
+    ],
+    [
+      "<h2>\n  CHASE THE<br/>\n  <span>FREEDOM.</span>\n</h2>",
+      "<h2>\n  <br/>\n  <span>FREEDOM.</span>\n</h2>",
+      '<h2>\n  {"NEW"}<br/>\n  <span>FREEDOM.</span>\n</h2>',
+    ],
+    [
+      "<a>VELO<span>X</span></a>",
+      "<a><span>X</span></a>",
+      '<a>{"NEW"}<span>X</span></a>',
+    ],
+    [
+      "<button><svg/> Go</button>",
+      '<button><svg/>{" "}</button>',
+      '<button><svg/>{" NEW"}</button>',
+    ],
+  ])("a cleared run next to an element takes text again: %j", (source, cleared, typed) => {
+    expect(write(source, "")).toBe(cleared);
+    expect(text(cleared)).toEqual({ editable: true, value: "" });
+    expect(write(cleared, "NEW")).toBe(typed);
+    expect(text(typed)).toEqual({ editable: true, value: "NEW" });
+    // The result is valid JSX with no stray whitespace expression left.
+    expect(typed).not.toContain('{" "}');
+    expect(() =>
+      packages.parser.parse(typed, { plugins: ["jsx"] }),
+    ).not.toThrow();
+    // An untouched blur on the cleared field changes nothing.
+    expect(write(cleared, "")).toBe(cleared);
   });
 });

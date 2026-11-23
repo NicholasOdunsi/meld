@@ -6,7 +6,17 @@ import {
   type EditableNode,
   type Patch,
 } from "./patch";
-import { edges, textBinding, type Content } from "./runs";
+import {
+  blankInsertOffset,
+  edges,
+  NO_TEXT_TAGS,
+  SVG_TEXT_TAGS,
+  TEXT_TAGS,
+  textBinding,
+  VOID_TAGS,
+  type Content,
+  type Run,
+} from "./runs";
 import {
   changeUtility,
   cssValue,
@@ -104,27 +114,13 @@ function declarations(value: string): Root | null {
 function dynamic(value: string): boolean {
   return /(?:var|calc|env|attr)\s*\(/i.test(value) || /\\|\/\*/.test(value);
 }
-const voidTags = new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "source",
-  "track",
-  "wbr",
-]);
 const preTags = new Set(["pre", "listing", "plaintext"]);
 const preStyle =
   /white-space\s*:\s*(?:pre|break-spaces)|white-space-collapse\s*:\s*(?:preserve|break-spaces)/i;
 const preClass = /^(?:[^\s:]+:)*!?whitespace-(?:pre|break-spaces)/;
 // Text inside <pre> or white-space: pre* shows its whitespace as written. Only inline styles and
-// utility classes can be seen here; a stylesheet rule cannot.
+// utility classes can be seen here. A white-space: pre* rule in a stylesheet (<style> or a linked
+// file) cannot be seen from the element's source, so such text is treated as normal flow.
 function preserves(node: Element): boolean {
   for (let at: Node | null = node; at && "tagName" in at; at = at.parentNode) {
     if (preTags.has(at.tagName)) return true;
@@ -136,8 +132,16 @@ function preserves(node: Element): boolean {
   }
   return false;
 }
-// The final line break and the indentation after it, in a run of whitespace.
-const lastBreak = /(?:\r\n|\n|\r)[ \t\f]*$/;
+const svgNamespace = "http://www.w3.org/2000/svg";
+// Whether typing may go into this element when it has no text: not a void, replaced, foreign or
+// structural element, and only with an explicit end tag to type before.
+function takesText(node: Element): boolean {
+  if (VOID_TAGS.has(node.tagName) || NO_TEXT_TAGS.has(node.tagName))
+    return false;
+  if (node.namespaceURI === svgNamespace)
+    return SVG_TEXT_TAGS.has(node.tagName);
+  return node.namespaceURI === "http://www.w3.org/1999/xhtml";
+}
 function contentOf(source: string, node: Element): Content {
   const location = node.sourceCodeLocation!;
   const content: Content = {
@@ -146,7 +150,10 @@ function contentOf(source: string, node: Element): Content {
     elements: 0,
     insert: null,
     preserve: preserves(node),
+    textTag: TEXT_TAGS.has(node.tagName),
   };
+  // Elements seen before each run, to know whether one follows it.
+  const before = new Map<Run, number>();
   for (const child of node.childNodes) {
     if (child.nodeName === "#comment") continue;
     if (child.nodeName !== "#text" || !("value" in child)) {
@@ -161,21 +168,25 @@ function contentOf(source: string, node: Element): Content {
     const from = at.startOffset,
       to = at.endOffset;
     const { lead, trail } = edges(source.slice(from, to));
-    content.runs.push({
+    const run: Run = {
       from,
       to,
       text: child.value,
       write: (value) => lead + htmlText(value) + trail,
-    });
+    };
+    before.set(run, content.elements);
+    content.runs.push(run);
   }
-  if (!voidTags.has(node.tagName) && location.endTag && location.startTag) {
+  if (takesText(node) && location.endTag && location.startTag) {
+    // Only used when every run is blank: typing goes into the first one.
     const blank = content.runs[0];
-    let at = location.startTag.endOffset;
-    if (blank) {
-      const raw = source.slice(blank.from, blank.to);
-      const index = raw.search(lastBreak);
-      at = blank.from + (index < 0 ? raw.length : index);
-    }
+    const at = blank
+      ? blank.from +
+        blankInsertOffset(
+          source.slice(blank.from, blank.to),
+          content.elements > before.get(blank)!,
+        )
+      : location.startTag.endOffset;
     content.insert = (value) => ({ from: at, to: at, value: htmlText(value) });
   }
   return content;

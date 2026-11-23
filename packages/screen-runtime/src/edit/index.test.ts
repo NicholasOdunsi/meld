@@ -57,7 +57,9 @@ describe("source editing API", () => {
     },
   );
 
-  it.each(["<b>{name}</b>", "<b>Hello {name}</b>", "<b><i>Hi</i></b>"])(
+  // A layout container holding only elements has no text to edit (a text tag like <b> would take
+  // typed text next to its <i>, see html.test/jsx.test "cleared run").
+  it.each(["<b>{name}</b>", "<b>Hello {name}</b>", "<div><i>Hi</i></div>"])(
     "declines mixed or computed text %s",
     (element) => {
       const source = jsxPrefix + element;
