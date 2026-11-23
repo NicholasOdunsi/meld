@@ -11,9 +11,9 @@ describe("Star route prompt", () => {
 
   it("asks instead of silently filing a weak continuation", () => {
     expect(parseStarRouteResult({ decision: "continue", starTaskId, confidence: 0.69 }))
-      .toEqual({ decision: "ask", starTaskId, confidence: 0.69 });
+      .toEqual({ decision: "ask", starTaskId, confidence: 0.69, intent: "answer" });
     expect(parseStarRouteResult({ decision: "continue", starTaskId, confidence: 0.9 }))
-      .toEqual({ decision: "continue", starTaskId, confidence: 0.9 });
+      .toEqual({ decision: "continue", starTaskId, confidence: 0.9, intent: "answer" });
   });
 
   it("rejects a fabricated or impossible result", () => {

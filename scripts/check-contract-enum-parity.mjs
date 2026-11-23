@@ -32,6 +32,9 @@ export const DEEPSEEK_PROVIDER_MIGRATION =
 export const STAR_ROUTE_KIND_MIGRATION =
   "supabase/migrations/20261115231103_star_route_result.sql";
 
+export const BUILD_MODE_MIGRATION =
+  "supabase/migrations/20261123235526_build_mode.sql";
+
 // Every migration that declares or extends an enum the TypeScript contracts
 // also declare, in filename order. A migration can either create an enum
 // (`create type ... as enum (...)`) or extend one created earlier (`alter
@@ -57,6 +60,7 @@ export const ENUM_MIGRATIONS = [
   DESIGN_AGENT_KIND_MIGRATION,
   DEEPSEEK_PROVIDER_MIGRATION,
   STAR_ROUTE_KIND_MIGRATION,
+  BUILD_MODE_MIGRATION,
 ];
 
 function enumName(typeName) {

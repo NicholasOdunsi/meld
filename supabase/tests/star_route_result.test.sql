@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(5);
+select plan(6);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -43,6 +43,8 @@ select is(public.read_star_route_result('60000000-0000-4000-8000-000000000001')-
   'continue', 'the owner can read the route decision');
 select is(public.read_star_route_result('60000000-0000-4000-8000-000000000001')->>'starTaskId',
   '60000000-0000-4000-8000-000000000002', 'the result includes only the chosen Star id');
+select is(public.read_star_route_result('60000000-0000-4000-8000-000000000001')->>'intent',
+  'answer', 'a stored result without intent defaults to answer');
 select is(public.read_star_route_result('60000000-0000-4000-8000-000000000003'),
   null::jsonb, 'a pending task has no route result');
 
