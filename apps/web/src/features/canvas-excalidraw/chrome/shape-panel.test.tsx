@@ -127,6 +127,21 @@ describe("ShapePanel", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 
+  it("ties a number field's error to its input while the error shows, and drops the link when it clears", () => {
+    setup();
+    const thickness = number("Thickness");
+    expect(thickness).not.toHaveAttribute("aria-describedby");
+    fireEvent.change(thickness, { target: { value: "thick" } });
+    fireEvent.blur(thickness);
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Use a whole number, like 2.");
+    expect(alert.id).not.toBe("");
+    expect(thickness).toHaveAttribute("aria-describedby", alert.id);
+    expect(thickness).toHaveAccessibleDescription("Use a whole number, like 2.");
+    fireEvent.change(thickness, { target: { value: "3" } });
+    expect(thickness).not.toHaveAttribute("aria-describedby");
+  });
+
   it("clamps thickness to 1 to 8 and strips a trailing px", () => {
     const { onChange } = setup();
     fireEvent.change(number("Thickness"), { target: { value: "12px" } });

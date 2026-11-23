@@ -14,7 +14,7 @@ import { ICON_SIZE, PANEL_LAYOUT } from "./inspector-theme";
 import type { LiveIssue } from "./live-state";
 
 export type LivePanelTab = "code" | "tweak";
-export const LIVE_PANEL_TABS: readonly { value: LivePanelTab; label: string }[] = [{ value: "tweak", label: "Tweak" }, { value: "code", label: "Code" }];
+const TABS: readonly { value: LivePanelTab; label: string }[] = [{ value: "tweak", label: "Tweak" }, { value: "code", label: "Code" }];
 export const LIVE_PANEL_WIDTH = PANEL_LAYOUT.width;
 
 // The quiet square Close button both panels (live screen, shape) carry in their header.
@@ -28,12 +28,10 @@ export function PanelCloseButton({ onClick }: { onClick: () => void }) {
 
 // The inspector's side panel shell (the owner-approved custom surface, styled only by inspector-theme.ts):
 // a fixed-width column that scrolls, with the Tweak | Code control on the left of the header and Close on the right.
-export function LivePanel({ tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, onKeyDown, disabledTabs, children }: {
+export function LivePanel({ tab, onTabChange, onClose, onKeyDown, disabledTabs, children }: {
   tab: LivePanelTab;
   onTabChange: (tab: LivePanelTab) => void;
   onClose: () => void;
-  // Only for a panel with a single view: with one tab there is nothing to choose, so the control is hidden.
-  tabs?: readonly { value: LivePanelTab; label: string }[];
   onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
   // Tabs that cannot be chosen right now, with the reason shown as their tooltip (title), which is also their accessible description.
   disabledTabs?: Partial<Record<LivePanelTab, string>>;
@@ -44,7 +42,7 @@ export function LivePanel({ tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, o
   function moveTab(event: KeyboardEvent<HTMLElement>) {
     const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (!step) return;
-    const enabled = tabs.filter((item) => !reasonFor(item.value));
+    const enabled = TABS.filter((item) => !reasonFor(item.value));
     const index = enabled.findIndex((item) => item.value === tab);
     const next = enabled[(index + step + enabled.length) % enabled.length];
     if (!next || next.value === tab) return;
@@ -56,29 +54,27 @@ export function LivePanel({ tab, onTabChange, onClose, tabs = LIVE_PANEL_TABS, o
     <LayoutPanel width={LIVE_PANEL_WIDTH} padding={0} isScrollable={false} label="Live screen">
       <VStack gap={0} className="orion-panel orion-i-scope" data-testid="live-panel" onKeyDown={onKeyDown}>
         <header className="orion-panel__top">
-          {tabs.length > 1 ? (
-            <HStack role="tablist" aria-label="Panel view" className="orion-seg" onKeyDown={moveTab}>
-              {tabs.map((item) => {
-                const reason = reasonFor(item.value);
-                return (
-                  <button
-                    key={item.value}
-                    type="button"
-                    role="tab"
-                    data-tab={item.value}
-                    className="orion-seg__tab"
-                    aria-selected={item.value === tab}
-                    aria-disabled={reason ? "true" : undefined}
-                    title={reason}
-                    tabIndex={item.value === tab || reason ? 0 : -1}
-                    onClick={() => { if (!reason) onTabChange(item.value); }}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </HStack>
-          ) : null}
+          <HStack role="tablist" aria-label="Panel view" className="orion-seg" onKeyDown={moveTab}>
+            {TABS.map((item) => {
+              const reason = reasonFor(item.value);
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  role="tab"
+                  data-tab={item.value}
+                  className="orion-seg__tab"
+                  aria-selected={item.value === tab}
+                  aria-disabled={reason ? "true" : undefined}
+                  title={reason}
+                  tabIndex={item.value === tab ? 0 : -1}
+                  onClick={() => { if (!reason) onTabChange(item.value); }}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </HStack>
           <PanelCloseButton onClick={onClose} />
         </header>
         {children}

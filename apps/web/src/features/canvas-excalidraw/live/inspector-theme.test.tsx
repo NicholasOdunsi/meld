@@ -41,9 +41,19 @@ describe("inspector theme", () => {
     // The dropdown list is portalled to <body>, so it carries the scope class that gets the variables.
     expect(INSPECTOR_CSS).toContain(".orion-i-scope,");
   });
+  it("keeps the 2px focus ring on a focused invalid field: the invalid rule only changes the colour", () => {
+    const rule = (selector: string) => INSPECTOR_CSS.split("\n").find((line) => line.startsWith(selector));
+    expect(rule(".orion-i-field:focus-within{")).toContain("outline:2px solid var(--orion-i-focus)");
+    const invalid = rule(".orion-i-field[data-invalid]")!;
+    expect(invalid).toContain("outline-color:var(--orion-i-error)");
+    expect(invalid).not.toMatch(/outline:/);
+    const hex = rule('.orion-i-hex[aria-invalid="true"]')!;
+    expect(hex).toContain("outline-color:var(--orion-i-error)");
+    expect(hex).not.toMatch(/outline:/);
+  });
   it("carries the mock's panel shell and segmented control values", () => {
     expect(PANEL_LAYOUT.width).toBe(296);
-    expect(INSPECTOR_VARS["--orion-i-shell-width"]).toBe("296px");
+    expect(INSPECTOR_VARS).not.toHaveProperty("--orion-i-shell-width");
     expect(INSPECTOR_VARS["--orion-i-shell-border"]).toBe("1px solid #2c2c2c");
     expect(INSPECTOR_VARS["--orion-i-shell-pad"]).toBe("12px 14px");
     expect(INSPECTOR_VARS["--orion-i-seg-track"]).toBe("#262626");

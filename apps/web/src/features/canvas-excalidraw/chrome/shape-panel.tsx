@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { LayoutPanel } from "@astryxdesign/core/Layout";
 import { VStack } from "@astryxdesign/core/VStack";
 import { Blend, CaseSensitive, Ellipsis, Equal, Minus, SquareRoundCorner } from "lucide-react";
@@ -33,6 +34,7 @@ function NumberField({ label, glyph, trailing, value, min, max, error, selection
   onCommit: (value: number) => void;
 }) {
   const { text, setText, submitted, setSubmitted, invalid, setInvalid } = useFieldText(String(value), selectionKey);
+  const errorId = useId();
   function commit(raw: string = text) {
     const typed = raw.trim().replace(/(px|%)$/i, "").trim();
     if (!WHOLE_NUMBER.test(typed)) {
@@ -56,6 +58,7 @@ function NumberField({ label, glyph, trailing, value, min, max, error, selection
         inputMode="numeric"
         value={text}
         invalid={invalid}
+        describedBy={invalid ? errorId : undefined}
         onChange={(next) => { setText(next); setInvalid(false); }}
         onCommit={() => commit()}
         onKeyDown={(event) => {
@@ -67,7 +70,7 @@ function NumberField({ label, glyph, trailing, value, min, max, error, selection
           }
         }}
       />
-      {invalid ? <p role="alert" className="orion-i-error">{error}</p> : null}
+      {invalid ? <p id={errorId} role="alert" className="orion-i-error">{error}</p> : null}
     </FieldCell>
   );
 }

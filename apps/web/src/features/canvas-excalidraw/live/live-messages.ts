@@ -5,7 +5,7 @@ import { MAX_SCREEN_HTML_CHARS } from "../board-persistence";
 
 const source = z.literal(FRAME_MESSAGE_SOURCE);
 const cap = (n: number) => z.string().max(n);
-// The font family ends up in the "Showing:" caption. A frame is untrusted, so only the characters a
+// The font family is shown as muted text inside the Font row. A frame is untrusted, so only the characters a
 // font list needs survive (letters, digits, space, comma, quotes, dot, hyphen, underscore).
 const fontFamily = cap(120).transform((value) => value.replace(/[^\w\s,"'.\-]/g, ""));
 export const computedSchema = z.object({

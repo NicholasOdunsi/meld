@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ComponentType } from "react";
+import { useId, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ComponentType } from "react";
 import { CircleDashed } from "lucide-react";
 import { Popover } from "@astryxdesign/core/Popover";
 import { HStack } from "@astryxdesign/core/HStack";
@@ -66,6 +66,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
   const [text, setText] = useState(value ?? "");
   const [error, setError] = useState(false);
   const [stop, setStop] = useState<number | null>(null);
+  const errorId = useId();
   // Set when Escape closed the popup. The popover ignores a trigger click in the first 50ms after
   // any close (its guard against light dismiss reopening at once), which also swallowed a quick
   // reopen after Escape; the trigger reopens it itself in that case.
@@ -172,6 +173,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
         type="text"
         aria-label="Hex"
         aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         autoComplete="off"
         spellCheck={false}
         value={text}
@@ -187,7 +189,7 @@ export function ColourField({ label, value, used, isDisabled, onChange, onClear,
           }
         }}
       />
-      {error ? <p role="alert" className="orion-i-error">Use a colour like #1A2B3C.</p> : null}
+      {error ? <p id={errorId} role="alert" className="orion-i-error">Use a colour like #1A2B3C.</p> : null}
     </VStack>
   );
   return (

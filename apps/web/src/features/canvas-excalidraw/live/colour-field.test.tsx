@@ -110,6 +110,19 @@ it("styles the popup like the pill: the popover surface class, swatches as nativ
   expect(INSPECTOR_CSS).toMatch(/\.astryx-popover:has\(\.orion-i-pop\)\{[^}]*background:var\(--orion-i-surface\)[^}]*border:var\(--orion-i-border\)[^}]*box-shadow:var\(--orion-i-shadow\)/);
   expect(INSPECTOR_CSS).toMatch(/\.orion-i-pop__sw:hover[^{]*\{[^}]*box-shadow:var\(--orion-i-pop-ring\)/);
 });
+it("ties the Hex box to its error message while the error shows", () => {
+  open({ value: "#654321" });
+  const hex = screen.getByRole("textbox", { name: "Hex" });
+  expect(hex).not.toHaveAttribute("aria-describedby");
+  fireEvent.change(hex, { target: { value: "#12345" } });
+  fireEvent.keyDown(hex, { key: "Enter" });
+  const alert = screen.getByRole("alert");
+  expect(alert).toHaveTextContent("Use a colour like #1A2B3C.");
+  expect(alert.id).not.toBe("");
+  expect(hex).toHaveAttribute("aria-describedby", alert.id);
+  fireEvent.change(hex, { target: { value: "#123456" } });
+  expect(hex).not.toHaveAttribute("aria-describedby");
+});
 it("keeps the popup open when focus moves from the hex box to a swatch inside it", () => {
   const onChange = open({ value: "#654321" });
   const hex = screen.getByRole("textbox", { name: "Hex" });

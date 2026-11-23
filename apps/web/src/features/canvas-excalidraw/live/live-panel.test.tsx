@@ -10,15 +10,6 @@ afterEach(cleanup);
 const source = { kind: "react" as const, files: { "App.tsx": "export default function App() { return <main>Hi</main>; }", "styles.css": "main { display: grid; }" }, entry: "App.tsx" };
 
 describe("LivePanel", () => {
-  it("shows its content without a tab control while there is one tab, and closes", async () => {
-    const onClose = vi.fn();
-    render(<Layout end={<LivePanel tab="code" tabs={[{ value: "code", label: "Code" }]} onTabChange={vi.fn()} onClose={onClose}><p>body</p></LivePanel>} />);
-    expect(screen.getByText("body")).toBeInTheDocument();
-    expect(screen.queryByRole("tablist")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
   it("is a column with the shell class, scrolling vertically, that carries the test id and the key handler", () => {
     const onKeyDown = vi.fn();
     render(<Layout end={<LivePanel tab="tweak" onTabChange={vi.fn()} onClose={vi.fn()} onKeyDown={onKeyDown}><p>body</p></LivePanel>} />);
@@ -59,6 +50,9 @@ describe("LivePanel header", () => {
     expect(tweak).toHaveAttribute("aria-disabled", "true");
     expect(tweak).toHaveAttribute("title", "Select an element to tweak it.");
     expect(tweak).toHaveAccessibleDescription("Select an element to tweak it.");
+    // One roving tab stop: the selected tab only; a disabled tab is not a second stop.
+    expect(tweak).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("tab", { name: "Code" })).toHaveAttribute("tabindex", "0");
     await userEvent.click(tweak);
     expect(onTabChange).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("tab", { name: "Code" }));

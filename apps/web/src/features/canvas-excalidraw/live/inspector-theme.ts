@@ -17,8 +17,7 @@ export const PILL_LAYOUT = { gap: 12, margin: 12, leftInset: 76, bottomInset: 60
 // numbers feed the CSS variables below and the placement maths (when to open upward), so they cannot drift.
 export const MENU_LAYOUT = { maxHeight: 240, gap: 4 } as const;
 
-// The side panel shell (pixels): its width. The same number feeds the CSS variable below and the
-// LayoutPanel that hosts it, so the two cannot drift.
+// The side panel shell (pixels): its width, used by the LayoutPanel that hosts it (LIVE_PANEL_WIDTH).
 export const PANEL_LAYOUT = { width: 296 } as const;
 
 export const INSPECTOR_VARS = {
@@ -60,8 +59,7 @@ export const INSPECTOR_VARS = {
   "--orion-i-section-pad": "12px 0 6px",
   "--orion-i-section-head-gap": "10px",
   "--orion-i-row-gap": "8px",
-  // The side panel shell: a fixed-width column with the Tweak | Code control and Close on top.
-  "--orion-i-shell-width": `${PANEL_LAYOUT.width}px`,
+  // The side panel shell (its width is PANEL_LAYOUT.width): a column with the Tweak | Code control and Close on top.
   "--orion-i-shell-border": "1px solid #2c2c2c",
   "--orion-i-shell-pad": "12px 14px",
   "--orion-i-shell-head-gap": "12px",
@@ -182,7 +180,7 @@ export const INSPECTOR_CSS = `
 .orion-i-cell>.orion-i-field{flex:none}
 .orion-i-field{position:relative;box-sizing:border-box;flex:1;min-width:0;height:var(--orion-i-field-h);display:flex;align-items:center;gap:var(--orion-i-field-gap);padding:var(--orion-i-field-pad);border-radius:var(--orion-i-field-radius);background:var(--orion-i-field-bg);color:var(--orion-i-field-fg);font-size:var(--orion-i-field-size)}
 .orion-i-field:focus-within{outline:2px solid var(--orion-i-focus);outline-offset:0}
-.orion-i-field[data-invalid]{outline:1px solid var(--orion-i-error)}
+.orion-i-field[data-invalid]{outline-color:var(--orion-i-error)}
 .orion-i-field[data-disabled]{cursor:default;color:var(--orion-i-field-muted)}
 .orion-i-field__p{display:flex;align-items:center;justify-content:center;flex:none;min-width:var(--orion-i-field-label-min);color:var(--orion-i-field-label);font-size:var(--orion-i-field-small);font-weight:600}
 .orion-i-field__e{display:flex;align-items:center;flex:none;color:var(--orion-i-field-label);font-size:var(--orion-i-field-small)}
@@ -216,7 +214,7 @@ export const INSPECTOR_CSS = `
 .orion-i-pop__none:hover,.orion-i-pop__none:focus-visible{background:var(--orion-i-btn-hover);outline:0}
 .orion-i-hex{appearance:none;border:0;margin:0;outline:0;box-sizing:border-box;width:100%;height:var(--orion-i-field-h);padding:var(--orion-i-field-pad);border-radius:var(--orion-i-field-radius);background:var(--orion-i-field-bg);color:var(--orion-i-field-fg);font:inherit;font-size:var(--orion-i-field-size)}
 .orion-i-hex:focus{outline:2px solid var(--orion-i-focus);outline-offset:0}
-.orion-i-hex[aria-invalid="true"]{outline:1px solid var(--orion-i-error)}
+.orion-i-hex[aria-invalid="true"]{outline-color:var(--orion-i-error)}
 `;
 
 // One <style>, rendered once by the board root. Same markup on the server and the client.
