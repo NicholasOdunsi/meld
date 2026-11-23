@@ -21,7 +21,7 @@ import {
   type TargetRef,
 } from "./edit-target";
 import { createLiveController } from "./live-controller";
-import type { Computed } from "./live-messages";
+import type { Computed, FrameZoom } from "./live-messages";
 import { isValidPick } from "./selection-rules";
 import { resolveLiveSource, type LiveSource } from "./live-source";
 import { createPublicationBatch } from "./publication-batch";
@@ -63,7 +63,9 @@ export function createHandEditing(deps: {
     escapeFirst: (() => boolean) | null = null,
     // Told where the selected element went after an Undo or Redo run from outside the panel (the pill),
     // while the panel is mounted, so it keeps showing its values.
-    historyObserver: ((again: string | null) => void) | null = null;
+    historyObserver: ((again: string | null) => void) | null = null,
+    // The board's zoom, told about a pinch over the live frame.
+    frameZoom: ((zoom: FrameZoom) => void) | null = null;
   const diagnostics = new Map<
     Draft,
     { revision: number; issues: CompileError[] }
@@ -257,6 +259,7 @@ export function createHandEditing(deps: {
       live.clearSelection();
       return true;
     },
+    onZoom: (zoom) => frameZoom?.(zoom),
     onDraftIssues: (id, revision, issues) => {
       if (issues.length) setReselect(null);
       const draft = drafts.get(id);
@@ -345,6 +348,8 @@ export function createHandEditing(deps: {
     getHistoryObserver: () => historyObserver,
     // A handler that may take the frame's Escape before selection and sleep do (true = taken).
     setEscapeFirst(handler: (() => boolean) | null) { escapeFirst = handler; },
+    // The board's handler for a pinch (ctrl+wheel or Safari gesture) over the live frame.
+    setFrameZoom(handler: ((zoom: FrameZoom) => void) | null) { frameZoom = handler; },
     // The element to select again, once. Until its pick arrives the panel stays
     // up, so an edit never makes it blink away and back.
     takeReselect() {

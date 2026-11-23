@@ -5,7 +5,7 @@ import type { ScreenSource } from "@meld/screen-runtime/source";
 import { MAX_SCREEN_HTML_CHARS } from "../board-persistence";
 import { FRAME_CSP } from "../frame-document";
 import { parseElementTag } from "./element-tag";
-import { parseLiveFrameMessage, type Computed } from "./live-messages";
+import { parseLiveFrameMessage, type Computed, type FrameZoom } from "./live-messages";
 import type { LiveSource } from "./live-source";
 import {
   ASLEEP,
@@ -44,6 +44,8 @@ export type LiveDeps = {
   // Asked when the frame reports Escape; true means the host used it (it cleared
   // a selection), so the screen stays awake.
   onEscape?: () => boolean;
+  // A pinch (ctrl+wheel or Safari gesture) over the live frame: the board zooms.
+  onZoom?: (zoom: FrameZoom) => void;
   onDraftIssues?: (
     boardId: string,
     revision: number,
@@ -556,6 +558,12 @@ export function createLiveController(deps: LiveDeps): LiveController {
           break;
         case "escape":
           if (!deps.onEscape?.()) void sleep();
+          break;
+        case "zoom":
+          deps.onZoom?.({ x: message.x, y: message.y, deltaY: message.deltaY });
+          break;
+        case "pinch":
+          deps.onZoom?.({ x: message.x, y: message.y, scale: message.scale });
           break;
         case "snapshot":
           // Untrusted page text: passed on as-is, never parsed or run here.

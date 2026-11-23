@@ -48,7 +48,7 @@ import { dotGridStyle } from "./chrome/dot-grid";
 import { useNoPageBounce } from "./chrome/no-page-bounce";
 import { useTriangleShortcut, useTriangleTool } from "./chrome/use-triangle-tool";
 import { ZoomControl } from "./chrome/zoom-control";
-import type { Viewport } from "./chrome/zoom";
+import { wheelZoom, zoomAnchor, zoomAroundCenter, type Viewport } from "./chrome/zoom";
 import { createCompilerLease } from "./live/compiler-lease";
 import { createHandEditing } from "./live/hand-editing";
 import { HandEditPanel } from "./live/hand-edit-panel";
@@ -238,6 +238,28 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   useTriangleTool(api, access === "edit" && activeTool === "triangle", useCallback(() => setActiveTool("select"), []));
   const viewRef = useRef(view);
   useEffect(() => { viewRef.current = view; }, [view]);
+  const applyZoom = useCallback((next: { zoom: number; scrollX: number; scrollY: number }) => {
+    apiRef.current?.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } });
+  }, []);
+  // A pinch over the awake screen never reaches the board (the iframe takes the wheel), so the
+  // frame's bridge reports it in its own px; the board zooms about that point as Excalidraw would.
+  useEffect(() => {
+    editing.setFrameZoom((zoom) => {
+      const current = apiRef.current, state = live.getState();
+      if (!current || state.phase === "asleep") return;
+      const frame = document.querySelector<HTMLIFrameElement>(`iframe[data-orion-live="${CSS.escape(state.screenId)}"]`);
+      if (!frame) return;
+      const app = current.getAppState(), rect = frame.getBoundingClientRect();
+      const scale = frame.offsetWidth ? rect.width / frame.offsetWidth : app.zoom.value;
+      const at = { scrollX: app.scrollX, scrollY: app.scrollY, zoom: app.zoom.value, width: app.width, height: app.height };
+      applyZoom(zoomAroundCenter(
+        at,
+        "deltaY" in zoom ? wheelZoom(at.zoom, zoom.deltaY) : at.zoom * zoom.scale,
+        { x: rect.left + zoom.x * scale - app.offsetLeft, y: rect.top + zoom.y * scale - app.offsetTop },
+      ));
+    });
+    return () => editing.setFrameZoom(null);
+  }, [applyZoom, editing, live]);
   useEffect(() => store.subscribe(() => {
     if (api) queueSave(api.getSceneElementsIncludingDeleted());
   }), [api, queueSave, store]);
@@ -522,7 +544,12 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
               <ScreenPill key={pill.key} bounds={pill.bounds} view={view} items={pill.items} label={pill.label} testId={pill.testId} />
             )) : null}
             {api ? (
-              <ZoomControl view={view} onZoom={(next) => api.updateScene({ appState: { zoom: { value: next.zoom as never }, scrollX: next.scrollX, scrollY: next.scrollY } })} />
+              <ZoomControl
+                view={view}
+                // About the selected screen, else the awake one, else the visible board's centre.
+                anchor={zoomAnchor([selection?.kind === "screen" ? selection.bounds : null, liveFrameElement], view)}
+                onZoom={applyZoom}
+              />
             ) : null}
           </VStack>
         )}

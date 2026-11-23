@@ -171,6 +171,19 @@ it("forgets the pick when the frame reports a deselection",async()=>{
  editing.live.dispose();editing.drafts.get(id)?.dispose();
 });
 
+it("hands the live frame's zoom and pinch to the board's handler, once one is set",async()=>{
+ const {editing,send}=await running();
+ send({type:"zoom",x:1,y:2,deltaY:-3});
+ const onZoom=vi.fn();
+ editing.setFrameZoom(onZoom);
+ send({type:"zoom",x:1,y:2,deltaY:-3});
+ send({type:"pinch",x:4,y:5,scale:2});
+ editing.setFrameZoom(null);
+ send({type:"zoom",x:1,y:2,deltaY:-3});
+ expect(onZoom.mock.calls).toEqual([[{x:1,y:2,deltaY:-3}],[{x:4,y:5,scale:2}]]);
+ editing.drafts.get(id)?.dispose();editing.live.dispose();
+});
+
 it("uses the frame's Escape to clear a valid pick without sleeping, then sleeps on the next",async()=>{
  const {editing,frame,pick,send}=await running();
  pick();

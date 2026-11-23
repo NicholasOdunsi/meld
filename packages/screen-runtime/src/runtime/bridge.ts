@@ -126,6 +126,27 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !event.defaultPrevented) post({ type: 'escape' });
   });
+  // A pinch over the screen zooms the board, not the page or the screen. Chromium reports a
+  // trackpad pinch as ctrl+wheel, Safari as gesture events; both stay inside this frame, so the
+  // board hears them from here. A plain wheel scrolls the screen, and a screen that used
+  // ctrl+wheel itself keeps it. Numbers are bounded to what the host accepts.
+  const bound = (n, limit) => (Number.isFinite(n) ? Math.max(-limit, Math.min(limit, n)) : 0);
+  window.addEventListener('wheel', (event) => {
+    if (!event.ctrlKey || event.defaultPrevented) return;
+    event.preventDefault();
+    post({ type: 'zoom', x: bound(event.clientX, 100000), y: bound(event.clientY, 100000), deltaY: bound(event.deltaY, 1000) });
+  }, { passive: false });
+  let gestureScale = 1;
+  window.addEventListener('gesturestart', (event) => { event.preventDefault(); gestureScale = 1; });
+  window.addEventListener('gesturechange', (event) => {
+    event.preventDefault();
+    const scale = event.scale;
+    if (!Number.isFinite(scale) || scale <= 0) return;
+    const step = Math.max(0.1, Math.min(10, scale / gestureScale));
+    gestureScale = scale;
+    post({ type: 'pinch', x: bound(event.clientX, 100000), y: bound(event.clientY, 100000), scale: step });
+  });
+  window.addEventListener('gestureend', (event) => { event.preventDefault(); });
   // While selecting, the screen must not react to a press at all: menus that open on pointerdown,
   // drag handles, focus and form submits. Only the click goes on to select.
   ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'submit'].forEach((type) => {

@@ -477,6 +477,23 @@ describe("createLiveController", () => {
     expect(live.getState().phase).toBe("asleep");
   });
 
+  it("passes the live frame's zoom and pinch to the host, and nothing from other windows or while asleep", async () => {
+    const onZoom = vi.fn();
+    const { live, attach, send } = setup({ onZoom });
+    send({ type: "zoom", x: 1, y: 2, deltaY: -3 });
+    await live.wake("ds-a");
+    attach();
+    send({ type: "ready" });
+    send({ type: "zoom", x: 1, y: 2, deltaY: -3 });
+    send({ type: "pinch", x: 4, y: 5, scale: 1.5 });
+    send({ type: "zoom", x: 1, y: 2, deltaY: -3 }, {});
+    send({ type: "zoom", x: 1, y: 2, deltaY: 5000 });
+    expect(onZoom.mock.calls).toEqual([
+      [{ x: 1, y: 2, deltaY: -3 }],
+      [{ x: 4, y: 5, scale: 1.5 }],
+    ]);
+  });
+
   it("reports whether the frame is picking, and loses it whenever the draft is previewed", async () => {
     const { live, attach, send } = setup();
     await live.wake("ds-a", { source, snapshot: false, revision: 0 });

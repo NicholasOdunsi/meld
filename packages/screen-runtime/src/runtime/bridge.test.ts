@@ -95,4 +95,44 @@ describe("FRAME_BRIDGE_SOURCE", () => {
     expect(preventDefault).toHaveBeenCalledTimes(2);
     expect(window.parent.postMessage).toHaveBeenCalledExactlyOnceWith({ source: FRAME_MESSAGE_SOURCE, type: "goto", screenKey: "details" }, "*");
   });
+  it("hands ctrl+wheel (Chromium pinch) to the board as a bounded zoom, and leaves plain wheels to the page", () => {
+    const { window, handlers } = setup();
+    const wheel = (event: Record<string, unknown>) => {
+      const preventDefault = vi.fn();
+      handlers.wheel({ deltaY: 0, clientX: 0, clientY: 0, ctrlKey: false, defaultPrevented: false, preventDefault, ...event } as never);
+      return preventDefault;
+    };
+    expect(wheel({ ctrlKey: true, deltaY: -12.5, clientX: 140, clientY: 60 })).toHaveBeenCalledOnce();
+    expect(wheel({ ctrlKey: true, deltaY: 1e9, clientX: -1e9, clientY: Number.NaN })).toHaveBeenCalledOnce();
+    // A plain wheel scrolls the screen; a screen that used ctrl+wheel itself keeps it.
+    expect(wheel({ deltaY: 40, clientX: 10, clientY: 10 })).not.toHaveBeenCalled();
+    expect(wheel({ ctrlKey: true, deltaY: 40, defaultPrevented: true })).not.toHaveBeenCalled();
+    expect(window.parent.postMessage.mock.calls).toEqual([
+      [{ source: FRAME_MESSAGE_SOURCE, type: "zoom", x: 140, y: 60, deltaY: -12.5 }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "zoom", x: -100000, y: 0, deltaY: 1000 }, "*"],
+    ]);
+  });
+  it("hands Safari pinch gestures to the board as bounded scale steps and stops page zoom", () => {
+    const { window, handlers } = setup();
+    const gesture = (type: string, event: Record<string, unknown>) => {
+      const preventDefault = vi.fn();
+      handlers[type]({ clientX: 50, clientY: 70, preventDefault, ...event } as never);
+      return preventDefault;
+    };
+    expect(gesture("gesturestart", { scale: 1 })).toHaveBeenCalledOnce();
+    expect(gesture("gesturechange", { scale: 1.5 })).toHaveBeenCalledOnce();
+    expect(gesture("gesturechange", { scale: 3 })).toHaveBeenCalledOnce();
+    expect(gesture("gesturechange", { scale: 0 })).toHaveBeenCalledOnce();
+    expect(gesture("gesturechange", { scale: 1e6 })).toHaveBeenCalledOnce();
+    expect(gesture("gestureend", { scale: 1e6 })).toHaveBeenCalledOnce();
+    // A new gesture starts from its own scale of 1.
+    gesture("gesturestart", { scale: 1 });
+    gesture("gesturechange", { scale: 0.5 });
+    expect(window.parent.postMessage.mock.calls).toEqual([
+      [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 1.5 }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 2 }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 10 }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "pinch", x: 50, y: 70, scale: 0.5 }, "*"],
+    ]);
+  });
 });
