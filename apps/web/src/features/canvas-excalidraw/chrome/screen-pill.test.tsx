@@ -129,24 +129,21 @@ describe("ScreenPill", () => {
 });
 
 describe("screenPillItems", () => {
-  const handlers = { onOpenLive: vi.fn(), onCode: vi.fn() };
+  const handlers = { onCode: vi.fn() };
   const history = { canUndo: true, canRedo: false, onUndo: vi.fn(), onRedo: vi.fn() };
   const shape = (items: PillItem[]) => items.map((item) => item.kind === "divider" ? "|" : item.label);
 
-  it("a sleeping screen: Open live and Code", () => {
-    const items = screenPillItems({ awake: false, ...handlers });
-    expect(shape(items)).toEqual(["Open live", "Code"]);
-    (items[0] as { onPress: () => void }).onPress();
-    (items[1] as { onPress: () => void }).onPress();
-    expect(handlers.onOpenLive).toHaveBeenCalledOnce();
-    expect(handlers.onCode).toHaveBeenCalledOnce();
+  it("never offers Open live, whatever it is given", () => {
+    const all = [
+      screenPillItems({ ...handlers }),
+      screenPillItems({ edit: { pressed: false, onToggle: vi.fn() }, ...handlers }),
+      screenPillItems({ edit: { pressed: false, onToggle: vi.fn() }, history, ...handlers }),
+    ];
+    for (const items of all) expect(shape(items)).not.toContain("Open live");
   });
-  it("a sleeping screen never offers Edit or history", () => {
-    expect(shape(screenPillItems({ awake: false, edit: { pressed: false, onToggle: vi.fn() }, history, ...handlers }))).toEqual(["Open live", "Code"]);
-  });
-  it("an awake editable screen: Edit | Undo Redo | Code", () => {
+  it("an editable screen: Edit | Undo Redo | Code", () => {
     const onToggle = vi.fn();
-    const items = screenPillItems({ awake: true, edit: { pressed: true, onToggle }, history, ...handlers });
+    const items = screenPillItems({ edit: { pressed: true, onToggle }, history, ...handlers });
     expect(shape(items)).toEqual(["Edit", "|", "Undo", "Redo", "|", "Code"]);
     expect(items[0]).toMatchObject({ pressed: true });
     expect(items[2]).toMatchObject({ disabled: false });
@@ -155,10 +152,10 @@ describe("screenPillItems", () => {
     (items[0] as { onPress: () => void }).onPress();
     expect(onToggle).toHaveBeenCalledOnce();
   });
-  it("an awake read-only screen: only Code, with no dangling divider", () => {
-    expect(shape(screenPillItems({ awake: true, ...handlers }))).toEqual(["Code"]);
+  it("a read-only screen: only Code, with no dangling divider", () => {
+    expect(shape(screenPillItems({ ...handlers }))).toEqual(["Code"]);
   });
   it("Undo and Redo only appear with history", () => {
-    expect(shape(screenPillItems({ awake: true, edit: { pressed: false, onToggle: vi.fn() }, ...handlers }))).toEqual(["Edit", "|", "Code"]);
+    expect(shape(screenPillItems({ edit: { pressed: false, onToggle: vi.fn() }, ...handlers }))).toEqual(["Edit", "|", "Code"]);
   });
 });

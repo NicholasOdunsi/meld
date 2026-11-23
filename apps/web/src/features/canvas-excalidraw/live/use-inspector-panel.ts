@@ -36,8 +36,10 @@ export function useInspectorPanel(editing: HandEditing, onAsleep?: () => void) {
     setPanelOpen(tab === "code");
   }, [tweakReason]);
   // After a wake: Code when asked for, on a compile failure, or when the screen can't be edited.
-  const afterWake = useCallback((tab: LivePanelTab) => {
+  // Otherwise a wake from the pill's Edit turns Edit on (its editability is known only now).
+  const afterWake = useCallback((tab: LivePanelTab, options?: { edit?: boolean }) => {
     if (opensCodeOnWake({ phase: live.getState().phase, tab, editable: editableNow() })) showCode();
+    else if (options?.edit) { editRef.current = true; setEdit(true); }
   }, [editableNow, live, showCode]);
   const clearSelection = useCallback(() => {
     editing.setReselect(null);

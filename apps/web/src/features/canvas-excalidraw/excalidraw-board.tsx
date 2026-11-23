@@ -123,13 +123,14 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     compilerLease.retain();editing.retain();
     return()=>{const saved=editing.flushAll();editing.release();compilerLease.release(saved);};
   },[compilerLease,editing]);
-  const openPanel=useCallback(async(id:string,frameId:string|undefined,tab:LivePanelTab)=>{
+  const openPanel=useCallback(async(id:string,frameId:string|undefined,tab:LivePanelTab,options?:{edit?:boolean})=>{
     const attempt=await live.wake(id,undefined,frameId),current=live.getState();
     if(current.phase==="asleep" || current.attempt!==attempt || current.frameId!==frameId)return;
     if(current.screenId!==id && (!editing.drafts.get(id) || editing.drafts.get(id)!==editing.drafts.get(current.screenId)))return;
     // Waking opens no panel for an editable screen: it appears when something is selected, or Code is asked for.
     // A screen that can't be edited (read-only, or no editable source) opens Code: there is nothing to select.
-    afterWake(tab);
+    // The pill's Edit on a sleeping screen asks for Edit to start once it is awake (an editable one only).
+    afterWake(tab,options);
   },[afterWake,editing,live]);
   // A copied embeddable shares its source. Only the requested copy runs it.
   const liveFrameId = liveState.phase === "asleep" ? undefined : liveState.frameId
@@ -428,7 +429,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     selection,
     edit: { pressed: edit, onToggle: toggleEdit },
     history: history ? { canUndo: history.canUndo, canRedo: history.canRedo, onUndo: history.undo, onRedo: history.redo } : null,
-    onOpenLive: (id, frameId) => void openPanel(id, frameId, "tweak"),
+    // Wakes the way a double-click does (interactive, no panel), then turns Edit on.
+    onWakeEdit: (id, frameId) => void openPanel(id, frameId, "tweak", { edit: true }),
     onCode: (id, frameId) => void openPanel(id, frameId, "code"),
     hostScreenItems: selection?.kind === "screen" ? hostPillItems(screenActionsFor?.(selection) ?? []) : undefined,
     hostShapeItems: selection && selection.kind !== "screen" ? hostPillItems(shapeActionsFor?.(selection) ?? []) : undefined,

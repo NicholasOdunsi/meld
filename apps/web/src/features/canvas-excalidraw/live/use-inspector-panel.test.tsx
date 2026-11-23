@@ -229,6 +229,24 @@ describe("useInspectorPanel", () => {
     s.cleanupAll();
   });
 
+  it("a wake from the pill's Edit turns Edit on (picking on, no panel) for an editable screen", async () => {
+    const s = await setup();
+    act(() => s.view.result.current.afterWake("tweak", { edit: true }));
+    expect(s.view.result.current).toMatchObject({ edit: true, visible: false });
+    expect(s.editing.live.isPicking()).toBe(true);
+    s.pick();
+    expect(s.view.result.current).toMatchObject({ visible: true, panelTab: "tweak" });
+    s.cleanupAll();
+  });
+
+  it("a wake from the pill's Edit on a read-only screen opens Code and leaves Edit off", async () => {
+    const s = await setup("view");
+    act(() => s.view.result.current.afterWake("tweak", { edit: true }));
+    expect(s.view.result.current).toMatchObject({ edit: false, visible: true, panelOpen: true, panelTab: "code" });
+    expect(s.editing.live.isPicking()).toBe(false);
+    s.cleanupAll();
+  });
+
   it("disables the Tweak tab with nothing selected instead of closing the panel", async () => {
     const s = await setup();
     act(() => s.view.result.current.showCode());

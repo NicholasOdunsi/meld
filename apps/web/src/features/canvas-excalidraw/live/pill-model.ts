@@ -12,10 +12,13 @@ export type Bounds = { x: number; y: number; width: number; height: number };
 export type PillSpec = { key: string; bounds: Bounds; items: PillItem[]; label: string; testId: string };
 export const PRIMARY_PILL_TEST_ID = "selection-pill";
 export const EXTRA_PILL_TEST_ID = "selection-pill-extra";
+// A sleeping screen has nothing to undo yet: Undo and Redo show, disabled.
+const SLEEPING_HISTORY = { canUndo: false, canRedo: false, onUndo: () => {}, onRedo: () => {} };
 
 // Which pills the board shows, and where. The awake screen the user may edit always has its own pill
-// under its frame, selected or not; a selected screen without one gets Open live + Code (or just
-// Code when it is awake but read-only); drawn shapes and text keep only the host's actions.
+// under its frame, selected or not. A selected sleeping screen gets the same main pill (Edit, Undo and
+// Redo disabled with no history yet, Code), whose Edit wakes it and turns Edit on; a viewer's, or an
+// awake read-only one, gets just Code. Drawn shapes and text keep only the host's actions.
 export function pillSpecs(input: {
   phase: LiveState["phase"];
   access: "edit" | "view";
@@ -26,7 +29,8 @@ export function pillSpecs(input: {
   selection: SelectionSummary | null;
   edit: { pressed: boolean; onToggle: () => void };
   history: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void } | null;
-  onOpenLive: (screenId: string, frameId: string) => void;
+  // Edit on a sleeping screen: wake it (as a double-click does) and turn Edit on once it is awake.
+  onWakeEdit: (screenId: string, frameId: string) => void;
   onCode: (screenId: string, frameId: string) => void;
   hostScreenItems?: readonly PillItem[];
   hostShapeItems?: readonly PillItem[];
@@ -43,7 +47,7 @@ export function pillSpecs(input: {
       label: "Screen actions", testId: PRIMARY_PILL_TEST_ID,
       bounds: liveFrame.bounds,
       items: [
-        ...screenPillItems({ awake: true, edit: input.edit, history: input.history ?? undefined, onOpenLive: () => input.onOpenLive(screenId, liveFrame.id), onCode: () => input.onCode(screenId, liveFrame.id) }),
+        ...screenPillItems({ edit: input.edit, history: input.history ?? undefined, onCode: () => input.onCode(screenId, liveFrame.id) }),
         ...(selectedIsLive ? input.hostScreenItems ?? [] : []),
       ],
     });
@@ -55,7 +59,15 @@ export function pillSpecs(input: {
       label: selectedIsLive ? "Screen actions" : "Selected screen actions", testId: PRIMARY_PILL_TEST_ID,
       bounds: selection.bounds,
       items: [
-        ...screenPillItems({ awake: selectedIsLive, onOpenLive: () => input.onOpenLive(screenId, frameId), onCode: () => input.onCode(screenId, frameId) }),
+        ...screenPillItems({
+          // Awake here means read-only (an editable awake frame has the pill above); a sleeping
+          // screen's editability is known only once it wakes, so a non-viewer gets Edit.
+          ...(selectedIsLive || input.access === "view" ? {} : {
+            edit: { pressed: false, onToggle: () => input.onWakeEdit(screenId, frameId) },
+            history: SLEEPING_HISTORY,
+          }),
+          onCode: () => input.onCode(screenId, frameId),
+        }),
         ...(input.hostScreenItems ?? []),
       ],
     });

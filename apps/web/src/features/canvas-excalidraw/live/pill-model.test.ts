@@ -8,7 +8,7 @@ const labels = (items: readonly PillItem[]) => items.map((i) => i.kind === "divi
 const base = {
   phase: "running" as const, access: "edit" as const, hasDraft: true, editable: true, liveFrame: frame, selection: null,
   edit: { pressed: false, onToggle: vi.fn() }, history: { canUndo: false, canRedo: false, onUndo: vi.fn(), onRedo: vi.fn() },
-  onOpenLive: vi.fn(), onCode: vi.fn(), awakeScreenId: "ds-a",
+  onWakeEdit: vi.fn(), onCode: vi.fn(), awakeScreenId: "ds-a",
 };
 
 describe("pillSpecs", () => {
@@ -31,11 +31,18 @@ describe("pillSpecs", () => {
     const specs = pillSpecs({ ...readOnly, selection: screenSel() });
     expect(specs.map((s) => labels(s.items))).toEqual([["Code"]]);
   });
-  it("a selected sleeping screen gets Open live and Code, in addition to the awake pill", () => {
+  it("a selected sleeping screen gets the same main pill, in addition to the awake pill", () => {
     const specs = pillSpecs({ ...base, selection: screenSel("f2", "ds-b") });
-    expect(specs.map((s) => labels(s.items))).toEqual([["Edit", "|", "Undo", "Redo", "|", "Code"], ["Open live", "Code"]]);
-    (specs[1].items[0] as { onPress: () => void }).onPress();
-    expect(base.onOpenLive).toHaveBeenCalledWith("ds-b", "f2");
+    expect(specs.map((s) => labels(s.items))).toEqual([["Edit", "|", "Undo", "Redo", "|", "Code"], ["Edit", "|", "Undo", "Redo", "|", "Code"]]);
+    const items = specs[1].items;
+    expect(items[0]).toMatchObject({ pressed: false });
+    expect(items[2]).toMatchObject({ disabled: true });
+    expect(items[3]).toMatchObject({ disabled: true });
+    (items[0] as { onPress: () => void }).onPress();
+    expect(base.onWakeEdit).toHaveBeenCalledWith("ds-b", "f2");
+    expect(base.edit.onToggle).not.toHaveBeenCalled();
+    (items[5] as { onPress: () => void }).onPress();
+    expect(base.onCode).toHaveBeenCalledWith("ds-b", "f2");
   });
   it("only the primary pill carries the main test id, and each pill has its own label", () => {
     const two = pillSpecs({ ...base, selection: screenSel("f2", "ds-b") });
@@ -52,7 +59,19 @@ describe("pillSpecs", () => {
   it("asleep: only a selected screen has a pill", () => {
     const asleep = { ...base, phase: "asleep" as const, liveFrame: null, awakeScreenId: null };
     expect(pillSpecs(asleep)).toEqual([]);
-    expect(pillSpecs({ ...asleep, selection: screenSel() }).map((s) => labels(s.items))).toEqual([["Open live", "Code"]]);
+    const specs = pillSpecs({ ...asleep, selection: screenSel() });
+    expect(specs.map((s) => labels(s.items))).toEqual([["Edit", "|", "Undo", "Redo", "|", "Code"]]);
+    expect(specs.flatMap((s) => labels(s.items))).not.toContain("Open live");
+    expect(specs[0].label).toBe("Selected screen actions");
+  });
+  it("a viewer's selected sleeping screen gets just Code", () => {
+    const asleep = { ...base, access: "view" as const, phase: "asleep" as const, liveFrame: null, awakeScreenId: null };
+    expect(pillSpecs({ ...asleep, selection: screenSel() }).map((s) => labels(s.items))).toEqual([["Code"]]);
+  });
+  it("keeps the host's screen actions after the main pill on a sleeping screen", () => {
+    const host: PillItem[] = [{ kind: "button", label: "Add to chat", icon: "Add to chat", text: true, onPress: vi.fn() }];
+    const asleep = { ...base, phase: "asleep" as const, liveFrame: null, awakeScreenId: null, hostScreenItems: host };
+    expect(pillSpecs({ ...asleep, selection: screenSel() }).map((s) => labels(s.items))).toEqual([["Edit", "|", "Undo", "Redo", "|", "Code", "Add to chat"]]);
   });
   it("a viewer has no Edit pill for an awake screen", () => {
     expect(pillSpecs({ ...base, access: "view" })).toEqual([]);

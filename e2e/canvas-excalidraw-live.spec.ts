@@ -53,6 +53,10 @@ test("double-click wakes a screen with its scripts, and Escape puts it back to s
   ).toContain("script has not run");
 });
 
+// The pill's buttons, in order, by accessible name.
+const pillButtonNames = (pill: ReturnType<Page["locator"]>) =>
+  pill.getByRole("button").evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")));
+
 async function selectScreen(page: Page) {
   await page.evaluate(() => {
     const api = window.__orionBoard!.api;
@@ -63,18 +67,18 @@ async function selectScreen(page: Page) {
   });
 }
 
-test("the pill's Open live wakes the selected screen", async ({ page }) => {
+test("the pill's Edit wakes the selected screen; a screen that can't be edited opens its Code", async ({ page }) => {
   await addFixture(page, "sample");
   await selectScreen(page);
-  await page
-    .getByTestId("selection-pill")
-    .getByRole("button", { name: "Open live" })
-    .click();
-  await expect(page.locator('iframe[data-orion-live="welcome"]')).toBeVisible();
   const pill = page.getByTestId("selection-pill");
+  // A selected sleeping screen shows the main pill: no separate Open live.
+  await expect.poll(() => pillButtonNames(pill)).toEqual(["Edit", "Undo", "Redo", "Code"]);
   await expect(pill.getByRole("button", { name: "Open live" })).toHaveCount(0);
+  await pill.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.locator('iframe[data-orion-live="welcome"]')).toBeVisible();
+  await expect.poll(() => pillButtonNames(pill)).toEqual(["Code"]);
   // A lab screen has no room to save to, so it can't be edited: waking opens its Code (there is
-  // nothing to select), with Tweak disabled.
+  // nothing to select), with Tweak disabled, and its pill keeps only Code.
   const panel = page.getByTestId("live-panel");
   await expect(panel.getByRole("tab", { name: "Code", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(panel.getByRole("tab", { name: "Tweak", exact: true })).toHaveAttribute("aria-disabled", "true");
@@ -188,7 +192,7 @@ test("a delayed Code action cannot reopen the panel after reopening the same fra
     await runtimeRequested;
     await page.keyboard.press("Escape");
     await selectScreen();
-    await pill.getByRole("button", { name: "Open live" }).click();
+    await pill.getByRole("button", { name: "Edit", exact: true }).click();
     releaseRuntime();
 
     await expect(
@@ -196,7 +200,8 @@ test("a delayed Code action cannot reopen the panel after reopening the same fra
         .frameLocator('iframe[data-orion-live="welcome"]')
         .getByText("script ran"),
     ).toBeVisible();
-    // Waking opens no panel, and the abandoned Code action must not open one later.
+    // Waking from Edit opens no panel (Edit is on), and the abandoned Code action must not open one later.
+    await expect(pill.getByRole("button", { name: "Edit", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("live-panel")).toHaveCount(0);
     await page.waitForTimeout(500);
     await expect(page.getByTestId("live-panel")).toHaveCount(0);
@@ -377,6 +382,49 @@ export default function App() {
   const [count, setCount] = useState(0);
   return <main><button className="bg-red-500 text-white p-4" onClick={() => setCount(count + 1)}>Start</button><output aria-label="Count">{count}</output></main>;
 }`;
+
+test("a single click on a sleeping screen shows the main pill; its Edit wakes the screen in Edit", async ({
+  page,
+  baseURL,
+}) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, editableCounter, "Phone");
+  const live = page.locator("iframe[data-orion-live]");
+  await expect(live).toBeVisible();
+  const id = (await live.getAttribute("data-orion-live"))!;
+  // Put it to sleep (not in Edit, nothing selected), then select it with one click.
+  await page.keyboard.press("Escape");
+  await expect(live).toHaveCount(0);
+  const thumbnail = page.locator(`iframe[data-orion-frame="${id}"]`);
+  await expect(thumbnail).toBeVisible();
+  const box = (await thumbnail.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect.poll(() => pillButtonNames(pill(page))).toEqual(["Edit", "Undo", "Redo", "Code"]);
+  await expect(pill(page).getByRole("button", { name: "Open live" })).toHaveCount(0);
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "false");
+  await expect(pillButton(page, "Undo")).toBeDisabled();
+  await expect(pillButton(page, "Redo")).toBeDisabled();
+  // Selecting keeps it a picture: nothing wakes until Edit.
+  await expect(live).toHaveCount(0);
+  await page.screenshot({ path: ".context/fu-pill-1-selected-sleeping.png" });
+  await pillButton(page, "Edit").click();
+  // Awake and interactive in Edit, with no panel and nothing selected yet.
+  await expect(live).toBeVisible();
+  await expect(pillButton(page, "Edit")).toHaveAttribute("aria-pressed", "true");
+  const panel = page.getByTestId("live-panel");
+  await expect(panel).toHaveCount(0);
+  await page.screenshot({ path: ".context/fu-pill-2-after-edit.png" });
+  // The next click on an element selects it (it does not run the screen) and opens the panel on Tweak.
+  const app = page.frameLocator("iframe[data-orion-live]");
+  await app.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(tab(panel, "Tweak")).toHaveAttribute("aria-selected", "true");
+  await expect(app.getByLabel("Count")).toHaveText("0");
+  await page.screenshot({ path: ".context/fu-pill-3-picked.png" });
+  // Edit again turns it off, as on any awake screen: the selection clears and the panel closes.
+  await toggleEdit(page, false);
+  await expect(panel).toHaveCount(0);
+  await expect(live).toBeVisible();
+});
 
 async function persisted(page: Page, boardId: string) {
   return page.evaluate(async (id) => {
