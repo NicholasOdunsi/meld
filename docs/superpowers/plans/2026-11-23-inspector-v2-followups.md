@@ -133,6 +133,21 @@ An element like the hero `<h1>RIDE<br>BEYOND<br><span class="accent">LIMITS.</sp
 
 ---
 
+### Task 7: Scrolling inside a screen scrolls the screen, not the board
+
+**Files:** decided by the diagnosis: likely `frame-host.tsx`, `excalidraw-board.tsx`, the board-frame document builder (the default stylesheet Task 4 adds), `packages/screen-runtime/src/runtime/bridge.ts`, and `chrome/no-page-bounce.ts`; their tests; one e2e.
+
+Owner: "just noticed a bug so im trying to scroll inside a page but inside it is the whole design canva scrolling" (screenshot: an AWAKE screen, pill shows Edit/Undo/Redo/Code, the page inside it is scrolled to the middle with its own scrollbar; the owner scrolls the page with the trackpad/wheel and the board behind pans instead of, or as well as, the screen's own content scrolling). Expected: a wheel/trackpad scroll with the pointer over an awake screen scrolls THAT screen's page; the board must not pan. At the end of the page's scroll range the leftover scroll must not chain out to the board either (a screen the user scrolls to its bottom must not suddenly move the canvas). Panning the board stays possible by scrolling with the pointer outside the screen (or with the existing board gestures).
+
+**Diagnose first, in real Chromium (port 3018, one spec file, `--timeout=60000`), then fix.** Reproduce with a tall pasted page in an awake screen (use the live spec's helpers): record `appState.scrollX/scrollY` and the iframe's own `contentWindow.scrollY` before/after plain wheel events (`page.mouse.wheel`) with the pointer (a) over the middle of the iframe, (b) near the iframe's edge/outline (the frame has an accent outline and the selection handles around it), (c) when the page is already at its scroll end/start, (d) in Edit mode (picking on) and Edit off, (e) over a screen that has `overflow:hidden` on body, (f) over an ASLEEP selected screen (thumbnail, `pointer-events:none`: here wheel over it SHOULD pan the board; confirm the owner is not simply in this state), (g) with the panel open. Hypotheses to test, in this order: (1) wheel chaining: the iframe's page reaches its scroll end and the browser hands the remaining scroll to the parent, which pans the board (fix candidate: `overscroll-behavior: contain` on `html`/`body` in the default stylesheet injected into every screen document BEFORE the author's styles, shared with Task 4's scrollbar stylesheet); (2) the pointer is over a non-iframe layer that belongs to the board (selection handles, the overlay wrapper around the iframe, the outline) and Excalidraw gets the wheel; (3) Edit mode's pointer handling or the Task 1 wheel/zoom code swallowing or re-routing a plain wheel; (4) the screen has no scrollable overflow so the wheel is not consumed by the iframe at all; (5) WebKit (the Mac app) forwards unconsumed wheel events to the parent in a way Chromium does not — note you cannot run WebKit here; design the fix to be robust anyway (for example: a host-side `wheel` listener in capture phase on the overlay that wraps an awake frame which stops the event from reaching Excalidraw when the pointer is over the iframe, in addition to the CSS containment).
+
+Do not weaken the ctrl+wheel/pinch zoom behaviour from Task 1 (ctrl+wheel/pinch over an awake screen still zooms the board) or the Escape order or Edit-mode pointer handling.
+
+- [ ] **Step 1: Diagnosis in the report** (numbers for each case above, which hypotheses are confirmed/refuted) and a failing e2e/unit test reproducing the confirmed bug. **Step 2: FAIL. Step 3: Implement the minimal robust fix. Step 4: PASS** (folder, typecheck, eslint, check:astryx, screen-runtime tests if the bridge/runtime changed, the live and chrome and zoom e2e specs alone, plus the new test). Screenshots under `.context/fu-scrollfix-*.png`; read them.
+- [ ] **Step 5: Commit** `fix(canvas): scrolling inside a screen scrolls the screen, not the board`.
+
+---
+
 ## Final verification (controller)
 
 Whole-plan review, then `pnpm typecheck`, lint, `check:astryx`, `test:colocation`, `test:workspace`, `pnpm test`, and each canvas e2e spec file alone with a hard timeout; relaunch nothing on port 3107 (the dev server there is live; just ⌘R in the Mac app).
