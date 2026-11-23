@@ -21,6 +21,16 @@ describe("interactive canvas preview", () => {
     expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   });
 
+  it("serves a saved snapshot in the static sandbox", async () => {
+    read.mockResolvedValue({ status: "ok", revision: 1, elements: [], screens: [
+      { id: "welcome", rev: 2, html: "<h1>Picture</h1><script>window.ready=true</script>", snapshot: true },
+    ] });
+    const response = await GET(new Request("http://localhost/"), params("welcome"));
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("<h1>Picture</h1>");
+    expect(response.headers.get("Content-Security-Policy")).toMatch(/^sandbox; .*script-src 'none'/);
+  });
+
   it("does not reveal missing or inaccessible boards", async () => {
     read.mockResolvedValue({ status: "error" });
     expect((await GET(new Request("http://localhost/"), params("welcome"))).status).toBe(404);

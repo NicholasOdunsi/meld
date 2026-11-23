@@ -1,0 +1,90 @@
+/* The paste dialog wears the same look as Orion Mac's own dialogs (OrionDialog):
+   a frosted glass panel with big corners, soft fields, and two equal buttons
+   with the action in Orion blue. Inside Orion Mac, app/global.css makes
+   every [data-variant] element transparent with !important, so the rules below
+   are more specific and !important on purpose; without them the panel and the
+   buttons lose their fill. */
+/* Orion's blue, the same value as OrionColor.dayBreakBlue in the Swift design
+   system (packages/orion-design-system). The web theme's accent is neutral
+   grey, so the dialog carries the brand colour itself. Dark text, because
+   white on this bright blue is hard to read. */
+.orion-paste {
+  --orion-blue: #00e1f3;
+  --orion-on-blue: #04222b;
+}
+
+html .astryx-dialog[data-variant]:has(.orion-paste) {
+  background: color-mix(in srgb, var(--color-background-popover) 78%, transparent) !important;
+  -webkit-backdrop-filter: blur(var(--spacing-8)) saturate(1.8);
+  backdrop-filter: blur(var(--spacing-8)) saturate(1.8);
+  border: var(--border-width) solid color-mix(in srgb, var(--color-text-primary) 14%, transparent);
+  border-radius: var(--radius-page) !important;
+  box-shadow: 0 var(--spacing-3) var(--spacing-8) color-mix(in srgb, var(--color-shadow) 55%, transparent);
+}
+
+/* Fields: the same soft fill as the panel, no heavy outline. */
+.orion-paste .astryx-textarea,
+.orion-paste .astryx-text-input {
+  background: color-mix(in srgb, var(--color-text-primary) 8%, transparent) !important;
+  border-color: transparent !important;
+  border-radius: var(--radius-container) !important;
+  /* The component draws its focus ring as an inset shadow, which showed up as a
+     second line inside the border. The border itself turns blue on focus. */
+  box-shadow: none !important;
+}
+.orion-paste .astryx-textarea:focus-within,
+.orion-paste .astryx-text-input:focus-within {
+  border-color: var(--orion-blue) !important;
+}
+.orion-paste .astryx-textarea textarea {
+  font-family: var(--font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
+  resize: none;
+}
+
+/* Device picker: three equal tiles; the chosen one is filled with Orion blue. */
+.orion-paste .astryx-segmented-control {
+  background: color-mix(in srgb, var(--color-text-primary) 8%, transparent) !important;
+  border-radius: var(--radius-full);
+  padding: var(--spacing-0-5);
+  width: 100%;
+}
+.orion-paste .astryx-segmented-control-item {
+  flex: 1;
+  justify-content: center;
+  gap: var(--spacing-1);
+  border-radius: var(--radius-full);
+}
+.orion-paste .astryx-segmented-control-item[data-selected] {
+  background: var(--orion-blue) !important;
+  color: var(--orion-on-blue) !important;
+  box-shadow: none !important;
+}
+
+/* Cancel and Create: equal width, capsule-shaped; Create is Orion blue. */
+.orion-paste-actions > * {
+  flex: 1;
+}
+.orion-paste .astryx-button[data-variant] {
+  border-radius: var(--radius-full) !important;
+  justify-content: center;
+}
+.orion-paste .astryx-button[data-variant="secondary"] {
+  background: color-mix(in srgb, var(--color-text-primary) 12%, transparent) !important;
+  color: var(--color-text-primary) !important;
+  border-color: transparent !important;
+}
+.orion-paste .astryx-button[data-variant="primary"] {
+  background: var(--orion-blue) !important;
+  color: var(--orion-on-blue) !important;
+  border-color: transparent !important;
+}
+.orion-paste .astryx-button[data-variant="primary"]:disabled,
+.orion-paste .astryx-button[data-variant="primary"][aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+/* The components colour their inner text themselves; make it follow the fill. */
+.orion-paste .astryx-button[data-variant="primary"] *,
+.orion-paste .astryx-segmented-control-item[data-selected] * {
+  color: inherit !important;
+}

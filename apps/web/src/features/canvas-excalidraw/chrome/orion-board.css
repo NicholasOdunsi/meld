@@ -1,0 +1,89 @@
+/* Orion draws its own chrome (dock, selection pill, zoom). Excalidraw's UI is
+   hidden here, scoped to the board. Excalidraw is pinned at 0.18.1 and
+   e2e/canvas-excalidraw-chrome.spec.ts fails if an upgrade renames these. */
+.orion-board .App-toolbar-container,
+.orion-board .App-menu_top .App-menu__left,
+.orion-board .App-menu__left,
+.orion-board .layer-ui__wrapper__top-right,
+.orion-board .layer-ui__wrapper__footer,
+.orion-board .layer-ui__wrapper__footer-left,
+.orion-board .layer-ui__wrapper__footer-right,
+.orion-board .App-bottom-bar,
+.orion-board .HintViewer,
+.orion-board .excalidraw__embeddable-hint,
+.orion-board .main-menu-trigger,
+.orion-board .default-sidebar-trigger,
+.orion-board .sidebar-trigger,
+/* The 'orion-screen://…' link popup over a selected screen: Orion's own pill replaces it. */
+.orion-board .excalidraw-hyperlinkContainer {
+  display: none !important;
+}
+
+/* The board's dotted grid is painted on .orion-board (see dot-grid.ts), so
+   Excalidraw's own surfaces must not cover it. */
+.orion-board .excalidraw,
+.orion-board .excalidraw .excalidraw-container,
+.orion-board .excalidraw .canvas-container {
+  background: transparent !important;
+}
+
+/* The tool dock: a filled, floating column in the same surface as the pill under a screen (see
+   live/inspector-theme.ts for the values). The tool in use is a light tile with a dark icon. Inside
+   Orion Mac, app/global.css makes every [data-variant] element transparent with !important, so these
+   rules are more specific and !important on purpose; without them the dock and the selected tool
+   vanish into the board. */
+.orion-board .orion-dock[data-testid="canvas-dock"] {
+  position: absolute;
+  inset-inline-start: var(--spacing-3);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  box-sizing: border-box;
+  padding: var(--orion-i-dock-pad) !important;
+  background: var(--orion-i-surface) !important;
+  border: var(--orion-i-border) !important;
+  border-radius: var(--orion-i-dock-radius) !important;
+  box-shadow: var(--orion-i-shadow) !important;
+}
+.orion-board .orion-dock[data-testid="canvas-dock"] > * {
+  gap: var(--orion-i-dock-gap) !important;
+}
+.orion-board .orion-dock[data-testid="canvas-dock"] button {
+  width: var(--orion-i-dock-btn);
+  height: var(--orion-i-dock-btn);
+  border-radius: var(--orion-i-btn-radius) !important;
+  color: var(--orion-i-dock-fg) !important;
+}
+.orion-board .orion-dock[data-testid="canvas-dock"] hr {
+  border-color: var(--orion-i-divider);
+}
+.orion-board .orion-dock[data-testid="canvas-dock"] button[aria-pressed="true"] {
+  background: var(--orion-i-btn-active-bg) !important;
+  color: var(--orion-i-btn-active-fg) !important;
+}
+
+/* The Shapes menu opens beside the dock and matches it: same surface, border and shadow. The
+   selected shape is lit like the dock's tools. */
+.astryx-popover:has(.orion-shapes-menu) {
+  background: var(--orion-i-surface) !important;
+  border: var(--orion-i-border);
+  border-radius: var(--orion-i-pill-radius);
+  box-shadow: var(--orion-i-shadow);
+}
+.orion-shapes-menu button[aria-pressed="true"] {
+  background: var(--orion-i-btn-active-bg) !important;
+  color: var(--orion-i-btn-active-fg) !important;
+}
+.orion-shapes-menu {
+  min-width: calc(var(--spacing-8) * 4);
+}
+/* Left-aligned rows of equal width: icons line up in one column. */
+.orion-shapes-menu button {
+  justify-content: flex-start !important;
+  width: 100%;
+}
+
+/* While the Triangle tool is active, the board takes a crosshair like Excalidraw's own shape tools. */
+.orion-triangle-tool .orion-board canvas.excalidraw__canvas {
+  cursor: crosshair !important;
+}

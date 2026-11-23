@@ -66,7 +66,7 @@ struct ProjectScreen: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(OrionSpacing.md)
                     }
-                    WebViewHost(webView: webView)
+                    WebViewHost(webView: webView, allowsSwipeNavigation: false)
                         .frame(maxHeight: .infinity)
                 }
                     .frame(width: showsWeb ? split.panelWidth : 0)
