@@ -63,6 +63,35 @@ describe("FrameHost", () => {
     expect(onLivePointer.mock.calls).toEqual([[iframe, true], [iframe, false]]);
   });
 
+  it("keeps a plain wheel over the live iframe from reaching the board, but lets ctrl/cmd+wheel (zoom) through", () => {
+    // WebKit hands a wheel the screen did not use to the parent page as a wheel on the iframe element,
+    // and Excalidraw pans the board for wheels on iframes. The board must never see it.
+    const live = fakeLive({ phase: "running", screenId: "welcome", attempt: 2, source, document: "<p>live</p>", errors: [] });
+    const { container } = setup(live);
+    const iframe = container.querySelector("iframe[data-orion-live='welcome']") as HTMLIFrameElement;
+    const board = vi.fn();
+    container.addEventListener("wheel", board);
+    const plain = new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true });
+    iframe.dispatchEvent(plain);
+    expect(board).not.toHaveBeenCalled();
+    expect(plain.defaultPrevented).toBe(true);
+    iframe.dispatchEvent(new WheelEvent("wheel", { deltaX: 40, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(board).not.toHaveBeenCalled();
+    const pinch = new WheelEvent("wheel", { deltaY: -10, ctrlKey: true, bubbles: true, cancelable: true });
+    iframe.dispatchEvent(pinch);
+    iframe.dispatchEvent(new WheelEvent("wheel", { deltaY: -10, metaKey: true, bubbles: true, cancelable: true }));
+    expect(board).toHaveBeenCalledTimes(2);
+    expect(pinch.defaultPrevented).toBe(false);
+  });
+
+  it("leaves a wheel over a sleeping screen to the board", () => {
+    const { container } = setup();
+    const board = vi.fn();
+    container.addEventListener("wheel", board);
+    container.querySelector("iframe")!.dispatchEvent(new WheelEvent("wheel", { deltaY: 120, bubbles: true, cancelable: true }));
+    expect(board).toHaveBeenCalledOnce();
+  });
+
   it("keeps other screens as pictures while one is live", () => {
     setup(fakeLive({ phase: "running", screenId: "other", attempt: 1, source, document: "<p>live</p>", errors: [] }));
     expect(document.querySelector("iframe[data-orion-live]")).toBeNull();

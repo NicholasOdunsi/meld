@@ -2,7 +2,7 @@ import { createContext, runInContext, runInNewContext } from "node:vm";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { describe, expect, it, vi } from "vitest";
 import type { CompiledScreen } from "./compile";
-import { assembleScreenDocument, inlineScript } from "./document";
+import { assembleScreenDocument, inlineScript, SCREEN_DOCUMENT_DEFAULTS } from "./document";
 import { FRAME_BRIDGE_SOURCE } from "./runtime/bridge";
 import { MODULE_LOADER_SOURCE } from "./runtime/loader";
 
@@ -75,6 +75,15 @@ describe("assembleScreenDocument", () => {
     expect(styles).toMatch(/html\s*,\s*body\s*\{\s*margin:\s*0;?\s*\}/);
     expect(styles).toContain(screen.styles[0]);
     expect(styles.indexOf(screen.styles[0])).toBeLessThan(styles.indexOf(screen.styles[1]));
+  });
+
+  it("keeps a screen's scrolling inside it, with defaults the screen's own CSS can override", () => {
+    const styles = elements(assembleScreenDocument(screen, env), "style").map(text);
+    // Reaching the end of the page must not hand the leftover scroll to the board around it.
+    expect(SCREEN_DOCUMENT_DEFAULTS.join("\n")).toMatch(/html\s*,\s*body\s*\{[^}]*overscroll-behavior:\s*contain/);
+    expect(styles.slice(0, SCREEN_DOCUMENT_DEFAULTS.length)).toEqual([...SCREEN_DOCUMENT_DEFAULTS]);
+    // The defaults come before the screen's own styles, so equal-specificity author rules win.
+    expect(styles.slice(SCREEN_DOCUMENT_DEFAULTS.length)).toEqual(screen.styles);
   });
 
   it("escapes mixed-case script terminators in runtime and compiled JavaScript", () => {

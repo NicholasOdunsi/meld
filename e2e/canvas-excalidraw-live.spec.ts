@@ -353,6 +353,60 @@ test("pasted HTML runs its inline handlers", async ({ page, baseURL }) => {
   await expect(app.getByRole("button", { name: "Clicked" })).toBeVisible();
 });
 
+const tallPage = `<main>${Array.from({ length: 30 }, (_, index) => `<section style="height:200px"><h2>Section ${index}</h2></section>`).join("")}</main>`;
+
+test("a wheel over an awake screen scrolls the screen, never the board, even at the end of the page", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, tallPage, "Desktop");
+  const live = page.locator("iframe[data-orion-live]");
+  await expect(page.frameLocator("iframe[data-orion-live]").getByText("Section 29")).toBeAttached();
+  const content = (await (await live.elementHandle())!.contentFrame())!;
+  const boardScroll = () => page.evaluate(() => {
+    const state = window.__orionBoard!.api.getAppState();
+    return { x: state.scrollX, y: state.scrollY, zoom: state.zoom.value };
+  });
+  const pageScroll = () => content.evaluate(() => window.scrollY);
+  // The page keeps its scrolling to itself (the screen's own CSS can still override it).
+  expect(await content.evaluate(() => [document.documentElement, document.body].map((element) => getComputedStyle(element).overscrollBehaviorY)))
+    .toEqual(["contain", "contain"]);
+  const box = (await live.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const start = await boardScroll();
+
+  // Mid-page: the screen scrolls, the board stays put.
+  await page.mouse.wheel(0, 300);
+  await expect.poll(pageScroll).toBe(300);
+  expect(await boardScroll()).toEqual(start);
+  await page.screenshot({ path: ".context/fu-scrollfix-1-mid-page.png" });
+
+  // At the end of the page the leftover scroll goes nowhere.
+  await content.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const end = await pageScroll();
+  await page.mouse.wheel(0, 300);
+  await page.waitForTimeout(300);
+  expect(await pageScroll()).toBe(end);
+  expect(await boardScroll()).toEqual(start);
+
+  // WebKit (the Mac app) hands a wheel the page did not use to the board's page as a wheel on the
+  // iframe element, which Excalidraw pans the board for. Chromium never does, so send it the way WebKit would.
+  const forwarded = await live.evaluate((frame) => {
+    const rect = frame.getBoundingClientRect();
+    const event = new WheelEvent("wheel", { deltaY: 300, bubbles: true, cancelable: true, clientX: rect.x + 40, clientY: rect.y + 40 });
+    frame.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(forwarded).toBe(true);
+  await page.waitForTimeout(300);
+  expect(await boardScroll()).toEqual(start);
+  await page.screenshot({ path: ".context/fu-scrollfix-2-end-of-page.png" });
+
+  // With the pointer off the screen, the wheel still pans the board.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height + 40);
+  await page.mouse.wheel(0, 200);
+  await expect.poll(async () => (await boardScroll()).y).toBeLessThan(start.y);
+  await expect(live).toBeVisible();
+});
+
 test("an unsupported package is named in the dialog and nothing is created", async ({
   page,
   baseURL,

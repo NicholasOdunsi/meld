@@ -11,13 +11,25 @@ export function inlineScript(js: string): string {
   return js.replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "\\x3C!--");
 }
 
+/**
+ * The stylesheet every live screen document starts with, before the screen's own styles so a
+ * screen can override any of it. Add new screen-wide defaults here (one rule per entry).
+ * - No page margin.
+ * - A screen keeps its scrolling to itself: reaching the end of its page must not hand the
+ *   leftover scroll to the board around it (scroll chaining).
+ */
+export const SCREEN_DOCUMENT_DEFAULTS: readonly string[] = [
+  "html,body{margin:0}",
+  "html,body{overscroll-behavior:contain}",
+];
+
 /** Assemble a srcdoc document using the embedding application's CSP policy. */
 export function assembleScreenDocument(
   screen: CompiledScreen,
   env: { csp: string; runtimeBundle: string },
 ): string {
   const csp = env.csp.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  const styles = ["html,body{margin:0}", ...screen.styles]
+  const styles = [...SCREEN_DOCUMENT_DEFAULTS, ...screen.styles]
     .map((css) => `<style>${css.replace(/<\/style/gi, "<\\/style")}</style>`).join("");
   const bootstrap = [env.runtimeBundle, FRAME_BRIDGE_SOURCE, MODULE_LOADER_SOURCE]
     .map((js) => `<script>${inlineScript(js)}</script>`).join("");

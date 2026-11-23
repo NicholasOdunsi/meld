@@ -11,6 +11,16 @@ import { StoppedOverlay } from "./live/stopped-overlay";
 import type { ScreenStore } from "./screen-store";
 
 const noSubscribe = () => () => {};
+
+// A plain wheel over the awake screen belongs to the screen. WebKit (the Mac app) hands a wheel the
+// screen did not use (its page is at the end, or does not scroll) to this page as a wheel on the
+// iframe element, and Excalidraw pans the board for wheels on iframes; Chromium never sends it.
+// So the board must not hear it here. A ctrl/cmd+wheel (a pinch, or zoom) still goes on to the board.
+function keepWheelInScreen(event: WheelEvent) {
+  if (event.ctrlKey || event.metaKey) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
 const frameStyle = { width: "100%", height: "100%", border: 0, background: "var(--color-background-surface)" } as const;
 
 export function FrameHost({ screenId, store, live, onShowCode, onLivePointer }: {
@@ -36,6 +46,12 @@ export function FrameHost({ screenId, store, live, onShowCode, onLivePointer }: 
       live.attachFrame(frame?.contentWindow ?? null);
     };
   }, [live, screenId, attempt]);
+  // Not via attachFrame's cleanup: that ref relies on being called with null. The listener goes with
+  // the element (a new attempt is a new iframe), and adding the same function again is a no-op.
+  const liveFrameRef = useMemo(() => (frame: HTMLIFrameElement | null) => {
+    frame?.addEventListener("wheel", keepWheelInScreen, { passive: false });
+    attachFrame(frame);
+  }, [attachFrame]);
 
   if (live && view.mode === "live") {
     return (
@@ -45,7 +61,7 @@ export function FrameHost({ screenId, store, live, onShowCode, onLivePointer }: 
         data-orion-live={screenId}
         sandbox={FRAME_SANDBOX}
         srcDoc={view.document}
-        ref={attachFrame}
+        ref={liveFrameRef}
         onPointerEnter={(event) => onLivePointer?.(event.currentTarget, true)}
         onPointerLeave={(event) => onLivePointer?.(event.currentTarget, false)}
         style={{ ...frameStyle, pointerEvents: "auto", outline: "var(--spacing-0-5) solid var(--color-accent)" }}
