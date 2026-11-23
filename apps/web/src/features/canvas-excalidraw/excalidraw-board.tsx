@@ -71,8 +71,9 @@ declare global {
     __orionBoard?: {
       api: ExcalidrawImperativeAPI;
       readCanvasEditTestState?:typeof readCanvasEditTestState;
+      addTestScreen?: (id: string, html: string) => ExcalidrawElement;
       roomId: string | null;
-      /** True once a room board has its saved scene on screen. */
+      /** True once a room board has its saved scene and its built screens on screen. */
       ready: () => boolean;
       convert: typeof convertToExcalidrawElements;
       addFixture: (key: FixtureKey) => void;
@@ -353,6 +354,8 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   const onApi = useCallback(
     (next: ExcalidrawImperativeAPI) => {
       setApi(next);
+      // A room board places its built screens after the saved scene lands.
+      let backfilled = !roomId;
       const readyToFocus = () => {
         const viewport = next.getAppState();
         return (!roomId || receivedInitialScene.current)
@@ -374,9 +377,17 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       };
       window.__orionBoard = {
         api: next,
-        ...(testPersistence?{readCanvasEditTestState:testPersistence}:{}),
+        ...(testPersistence ? {
+          readCanvasEditTestState: testPersistence,
+          addTestScreen: (id: string, html: string) => {
+            store.set({ id, rev: 1, html });
+            const frame = addScreenFrame(next, { screenId: id, ...nextFramePosition(next) });
+            next.scrollToContent(frame, { animate: false });
+            return frame;
+          },
+        } : {}),
         roomId: roomId ?? null,
-        ready: readyToFocus,
+        ready: () => backfilled && readyToFocus(),
         convert: convertToExcalidrawElements,
         addFixture: (key) => addFixture(next, key),
         setScreen: (id, html) => store.set({ id, rev: (store.get(id)?.rev ?? 0) + 1, html }),
@@ -414,6 +425,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           while (!readyToFocus() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 250));
           if (!readyToFocus()) return;
           try { await backfillDesignScreens(screenDeps, await listBuiltRoomScreens(roomId)); } catch { /* Canvas remains usable. */ }
+          finally { backfilled = true; }
         })();
       }
     },

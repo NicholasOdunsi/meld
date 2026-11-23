@@ -225,7 +225,7 @@ async function openRoomBoard(page: Page, baseURL: string) {
   ]);
   await page.goto(`${route}?room=${roomId}`);
   await expect(page.locator("canvas.excalidraw__canvas").first()).toBeVisible();
-  // The room's saved scene lands a beat after the canvas: wait for it before counting frames.
+  // Wait for the saved scene and built-screen backfill before interacting with the room board.
   await expect.poll(() => page.evaluate(() => window.__orionBoard?.ready() ?? false)).toBe(true);
 }
 
@@ -653,32 +653,47 @@ test("two editors preserve the conflicting draft until Reload latest",async({pag
  }finally{await other.close();}
 });
 
-test("a board-only screen converts on its first edit without duplicating or moving its frame",async({page,baseURL})=>{
- await openRoomBoard(page,baseURL!);await page.evaluate(()=>window.__orionBoard!.addFixture('sample'));
- const before=await page.evaluate(()=>{
-  const elements=window.__orionBoard!.api.getSceneElements();
-  const frame=elements.filter(e=>e.type==='embeddable').at(-1)!;
-  return {frame,count:elements.filter(e=>e.type==='embeddable').length};
- });
- const thumbnail=page.locator('iframe[data-orion-frame="welcome"]').last();const box=(await thumbnail.boundingBox())!;
- await page.mouse.dblclick(box.x+box.width/2,box.y+box.height/2);
- const panel=page.getByTestId('live-panel');await expect(panel).toHaveCount(0);await openCode(page);
- const editor=panel.getByRole('textbox',{name:'Source for index.html'});await expect(editor).toBeEditable();
- await editor.fill('<main><button>Converted</button></main>');
- await expect.poll(()=>page.locator('iframe[data-orion-live]').getAttribute('data-orion-live')).toMatch(/^ds-/);
- const id=(await page.locator('iframe[data-orion-live]').getAttribute('data-orion-live'))!;
- const after=await page.evaluate(frameId=>{
-  const elements=window.__orionBoard!.api.getSceneElements();return {frame:elements.find(e=>e.id===frameId)!,count:elements.filter(e=>e.type==='embeddable').length};
- },before.frame.id);
- expect(after.count).toBe(before.count);
- for(const key of ['id','x','y','width','height','angle','groupIds'] as const)expect(after.frame[key]).toEqual(before.frame[key]);
- const saved=await persisted(page,id);expect(saved.versionCount).toBe(1);expect(saved.source.files['index.html']).toBe('<main><button>Converted</button></main>');
- await expect(page.frameLocator('iframe[data-orion-live]').getByRole('button',{name:'Converted',exact:true})).toBeVisible();
- // In Edit, clicking the element selects it (there is no Pick button) and shows the Tweak panel.
- await toggleEdit(page,true);
- await page.frameLocator('iframe[data-orion-live]').getByRole('button',{name:'Converted',exact:true}).click();
- await expect(panel.getByRole('textbox',{name:'Text',exact:true})).toBeEnabled();
- await page.screenshot({path:'.context/plan3-hand-editing.png',fullPage:true});
+test("a board-only screen converts on its first edit without duplicating or moving its frame", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  // Each attempt needs a new screen identity because conversions persist in the shared room.
+  const before = await page.evaluate(() => {
+    const board = window.__orionBoard!;
+    const screenId = `board-only-${crypto.randomUUID()}`;
+    const frame = board.addTestScreen!(screenId, "<button>Original</button>");
+    const frameIds = board.api.getSceneElements().filter(element => element.type === "embeddable").map(element => element.id).sort();
+    return { screenId, frame, frameIds };
+  });
+  await doubleClickScreen(page, before.screenId);
+  const live = page.locator("iframe[data-orion-live]");
+  await expect(live).toHaveAttribute("data-orion-live", before.screenId);
+  const panel = page.getByTestId("live-panel");
+  await expect(panel).toHaveCount(0);
+  await openCode(page);
+  const editor = panel.getByRole("textbox", { name: "Source for index.html" });
+  await expect(editor).toBeEditable();
+  const editedHtml = "<main><button>Converted</button></main>";
+  await editor.fill(editedHtml);
+
+  await expect(live).toHaveAttribute("data-orion-live", /^ds-/);
+  const id = (await live.getAttribute("data-orion-live"))!;
+  const after = await page.evaluate(frameId => {
+    const frames = window.__orionBoard!.api.getSceneElements().filter(element => element.type === "embeddable");
+    return { frame: frames.find(element => element.id === frameId), frameIds: frames.map(element => element.id).sort() };
+  }, before.frame.id);
+  expect(after.frameIds).toEqual(before.frameIds);
+  for (const key of ["x", "y", "width", "height", "angle", "groupIds"] as const) {
+    expect(after.frame?.[key]).toEqual(before.frame[key]);
+  }
+  const saved = await persisted(page, id);
+  expect(saved.versionCount).toBe(1);
+  expect(saved.source.files["index.html"]).toBe(editedHtml);
+
+  const button = page.frameLocator("iframe[data-orion-live]").getByRole("button", { name: "Converted", exact: true });
+  await expect(button).toBeVisible();
+  await toggleEdit(page, true);
+  await button.click();
+  await expect(panel.getByRole("textbox", { name: "Text", exact: true })).toBeEnabled();
+  await page.screenshot({ path: ".context/plan3-hand-editing.png", fullPage: true });
 });
 
 // ---- Inspector acceptance: Edit picks, real values, colour popup, pill history, Code, Escape order ----
@@ -1037,7 +1052,7 @@ test("Escape order: a popup first, then the selection, then Edit, then the scree
   await panel.getByRole("button", { name: "Background colour", exact: true }).click();
   const hex = page.getByRole("textbox", { name: "Hex", exact: true });
   await expect(hex).toBeVisible();
-  await page.keyboard.press("Escape");
+  await hex.press("Escape");
   await expect(hex).toHaveCount(0);
   await expect(panel).toBeVisible();
   await expect(edit).toHaveAttribute("aria-pressed", "true");
@@ -1122,12 +1137,12 @@ test("Cmd+Z and Shift+Cmd+Z on the board undo and redo the screen's edit, keep t
   expect(await rectangles(page)).toBe(1);
 });
 
-test("with nothing to undo on the screen, Cmd+Z still undoes the board", async ({ page, baseURL }) => {
+test("with nothing to undo on the screen, the undo shortcut still undoes the board", async ({ page, baseURL }) => {
   await openRedButton(page, baseURL!);
   await expect(pillButton(page, "Undo")).toBeDisabled();
   await drawRectangle(page);
   await focusBoard(page);
-  await page.keyboard.press("Meta+z");
+  await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => rectangles(page)).toBe(0);
   await expect(page.locator("iframe[data-orion-live]")).toHaveCount(1);
 });
