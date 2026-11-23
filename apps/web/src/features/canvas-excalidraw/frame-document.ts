@@ -1,3 +1,5 @@
+import { SCREEN_SCROLLBAR_DEFAULTS } from "@meld/screen-runtime/document";
+
 // Everything that makes a generated page safe to run with scripts enabled.
 // The iframe gets FRAME_SANDBOX (no same-origin, popups, forms, downloads or
 // top navigation); the document gets FRAME_CSP (no network, no outside code).
@@ -61,7 +63,13 @@ export function buildFrameDocument(html: string): string {
   return `<!doctype html>${INJECTED}${html.replace(LEADING_DOCTYPE, "")}`;
 }
 
+// The sleeping picture gets the same quiet scrollbar as the awake screen (otherwise its classic grey
+// bar would show in the picture and change when the screen wakes). It goes right after the CSP and
+// before the page, so the page's own scrollbar styles still win. Only the scrollbar: the page's
+// margin and overscroll are left exactly as the page wrote them.
+const BOARD_FRAME_STYLE = `<style>${SCREEN_SCROLLBAR_DEFAULTS.join("")}</style>`;
+
 export function buildBoardFrameDocument(html: string): string {
   const csp = `<meta http-equiv="Content-Security-Policy" content="${BOARD_FRAME_CSP}">`;
-  return `<!doctype html>${csp}${html.replace(LEADING_DOCTYPE, "")}`;
+  return `<!doctype html>${csp}${BOARD_FRAME_STYLE}${html.replace(LEADING_DOCTYPE, "")}`;
 }

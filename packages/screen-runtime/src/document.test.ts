@@ -2,7 +2,7 @@ import { createContext, runInContext, runInNewContext } from "node:vm";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { describe, expect, it, vi } from "vitest";
 import type { CompiledScreen } from "./compile";
-import { assembleScreenDocument, inlineScript, SCREEN_DOCUMENT_DEFAULTS } from "./document";
+import { assembleScreenDocument, inlineScript, SCREEN_DOCUMENT_DEFAULTS, SCREEN_SCROLLBAR_DEFAULTS } from "./document";
 import { FRAME_BRIDGE_SOURCE } from "./runtime/bridge";
 import { MODULE_LOADER_SOURCE } from "./runtime/loader";
 
@@ -84,6 +84,24 @@ describe("assembleScreenDocument", () => {
     expect(styles.slice(0, SCREEN_DOCUMENT_DEFAULTS.length)).toEqual([...SCREEN_DOCUMENT_DEFAULTS]);
     // The defaults come before the screen's own styles, so equal-specificity author rules win.
     expect(styles.slice(SCREEN_DOCUMENT_DEFAULTS.length)).toEqual(screen.styles);
+  });
+
+  it("quiets the scrollbar: a transparent track and a thin translucent thumb, before the screen's own styles", () => {
+    const css = SCREEN_SCROLLBAR_DEFAULTS.join("\n");
+    expect(css).toMatch(/::-webkit-scrollbar\s*\{[^}]*width:\s*8px/);
+    expect(css).toMatch(/::-webkit-scrollbar\s*\{[^}]*height:\s*8px/);
+    expect(css).toMatch(/::-webkit-scrollbar-track\s*[,{][^}]*background:\s*transparent/);
+    expect(css).toMatch(/::-webkit-scrollbar-corner\s*[,{][^}]*background:\s*transparent/);
+    expect(css).toMatch(/::-webkit-scrollbar-thumb\s*\{[^}]*background-color:\s*rgba\(128,\s*128,\s*128,\s*0?\.45\)/);
+    expect(css).toMatch(/::-webkit-scrollbar-thumb:hover\s*\{[^}]*rgba\(128,\s*128,\s*128,\s*0?\.7\)/);
+    // Chromium ignores every ::-webkit-scrollbar rule on an element that sets scrollbar-color or
+    // scrollbar-width, so the defaults must not set them (a screen that does still wins).
+    expect(css).not.toMatch(/scrollbar-(color|width)/);
+    // All of it is in the shared defaults, and so ahead of the screen's own styles.
+    for (const rule of SCREEN_SCROLLBAR_DEFAULTS) expect(SCREEN_DOCUMENT_DEFAULTS).toContain(rule);
+    const document = assembleScreenDocument({ ...screen, styles: ["::-webkit-scrollbar{width:2px}"] }, env);
+    expect(document.indexOf("::-webkit-scrollbar-track")).toBeGreaterThan(-1);
+    expect(document.indexOf("::-webkit-scrollbar-track")).toBeLessThan(document.indexOf("::-webkit-scrollbar{width:2px}"));
   });
 
   it("escapes mixed-case script terminators in runtime and compiled JavaScript", () => {

@@ -36,6 +36,18 @@ describe("FrameHost", () => {
     expect(iframe.style.pointerEvents).toBe("none");
   });
 
+  it("names the frames for assistive tech without a tooltip or the screen id", () => {
+    const thumbnail = setup().container.querySelector("iframe")!;
+    expect(thumbnail.hasAttribute("title")).toBe(false);
+    expect(thumbnail.getAttribute("aria-label")).toBe("Screen");
+    cleanup();
+    const live = fakeLive({ phase: "running", screenId: "welcome", attempt: 2, source, document: "<p>live</p>", errors: [] });
+    const awake = setup(live).container.querySelector("iframe[data-orion-live='welcome']")!;
+    expect(awake.hasAttribute("title")).toBe(false);
+    expect(awake.getAttribute("aria-label")).toBe("Live screen");
+    expect(awake.getAttribute("aria-label")).not.toContain("welcome");
+  });
+
   it("shows the thumbnail with a spinner while the screen wakes", () => {
     setup(fakeLive({ phase: "compiling", screenId: "welcome", attempt: 1 }));
     expect(screen.getByText("Opening screen…")).toBeInTheDocument();

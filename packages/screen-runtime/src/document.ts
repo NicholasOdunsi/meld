@@ -12,15 +12,34 @@ export function inlineScript(js: string): string {
 }
 
 /**
+ * A quiet scrollbar for everything that scrolls inside a screen: a thin bar whose track and corner
+ * have no background at all, and a rounded translucent grey thumb that reads on dark and light
+ * screens (a little stronger on hover). Also used for the sleeping picture of a screen.
+ *
+ * Only the `::-webkit-scrollbar` family is used (Chromium and WebKit, the Mac app, both honour it).
+ * Do NOT add `scrollbar-color` or `scrollbar-width` here: Chromium then ignores every
+ * `::-webkit-scrollbar` rule on that element, and the track would come back. A screen that sets
+ * either itself (or its own `::-webkit-scrollbar` rules, which come later) still wins.
+ */
+export const SCREEN_SCROLLBAR_DEFAULTS: readonly string[] = [
+  "::-webkit-scrollbar{width:8px;height:8px}",
+  "::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}",
+  "::-webkit-scrollbar-thumb{background-color:rgba(128,128,128,.45);border:2px solid transparent;border-radius:8px;background-clip:padding-box}",
+  "::-webkit-scrollbar-thumb:hover{background-color:rgba(128,128,128,.7)}",
+];
+
+/**
  * The stylesheet every live screen document starts with, before the screen's own styles so a
  * screen can override any of it. Add new screen-wide defaults here (one rule per entry).
  * - No page margin.
  * - A screen keeps its scrolling to itself: reaching the end of its page must not hand the
  *   leftover scroll to the board around it (scroll chaining).
+ * - A quiet scrollbar (see SCREEN_SCROLLBAR_DEFAULTS).
  */
 export const SCREEN_DOCUMENT_DEFAULTS: readonly string[] = [
   "html,body{margin:0}",
   "html,body{overscroll-behavior:contain}",
+  ...SCREEN_SCROLLBAR_DEFAULTS,
 ];
 
 /** Assemble a srcdoc document using the embedding application's CSP policy. */

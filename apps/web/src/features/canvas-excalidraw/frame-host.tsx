@@ -57,7 +57,7 @@ export function FrameHost({ screenId, store, live, onShowCode, onLivePointer }: 
     return (
       <iframe
         key={view.attempt}
-        title={`Live screen ${screenId}`}
+        aria-label="Live screen"
         data-orion-live={screenId}
         sandbox={FRAME_SANDBOX}
         srcDoc={view.document}
@@ -73,7 +73,7 @@ export function FrameHost({ screenId, store, live, onShowCode, onLivePointer }: 
   }
   const thumbnail = screen ? (
     <iframe
-      title={`Screen ${screenId}`}
+      aria-label="Screen"
       data-orion-frame={screenId}
       sandbox={BOARD_FRAME_SANDBOX}
       srcDoc={document}
