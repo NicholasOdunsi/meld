@@ -29,6 +29,17 @@ it('bounds source identity and strict nested tweak shape',()=>{
   expect(handleSourceRequest({id:7,op:'tweak',files,src,tweak:{field:'text',value:''}})).toMatchObject({id:7,op:'tweak',result:{ok:true}});
 });
 
+it('takes a whole run index from 0 to 7 on text only, and edits that run',()=>{
+  const hero={'index.html':'<h1>RIDE<br>BEYOND<br><span>LIMITS.</span></h1>'};
+  const at=`index.html:0:${hero['index.html'].length}`;
+  expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'text',value:'FURTHER',index:1}})).toEqual({id:9,op:'tweak',result:{ok:true,files:{'index.html':'<h1>RIDE<br>FURTHER<br><span>LIMITS.</span></h1>'}}});
+  // In the schema's range but not a run of this element: the editor declines it.
+  expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'text',value:'x',index:7}})).toEqual({id:9,op:'tweak',result:{ok:false,reason:'not-literal'}});
+  for (const index of [1.5,-1,8,'1',null,Number.NaN])
+    expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'text',value:'x',index}}),String(index)).toMatchObject({id:9,op:'tweak',error:expect.any(String)});
+  expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'width',value:'8',index:0}})).toMatchObject({id:9,op:'tweak',error:expect.any(String)});
+});
+
 it.each([{id:8,op:'unknown'}, {id:8}])('settles identifiable malformed operations',req=>{
   expect(handleSourceRequest(req)).toEqual({id:8,op:'compile',error:'Invalid worker operation'});
 });

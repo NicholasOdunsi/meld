@@ -44,6 +44,7 @@ function visibleText(text: string): string {
 
 function LiteralField({
   field,
+  index,
   label,
   icon,
   letter,
@@ -54,6 +55,7 @@ function LiteralField({
   onTweak,
 }: {
   field: Field;
+  index?: number;
   label: string;
   icon?: ReactNode;
   letter?: string;
@@ -84,7 +86,7 @@ function LiteralField({
     setValue(next);
     setSubmitted(next);
     setError(false);
-    onTweak({ field, value: next });
+    onTweak({ field, value: next, ...(index === undefined ? {} : { index }) });
   }
   return (
     <FieldCell>
@@ -163,7 +165,21 @@ export function TweakPanel(props: TweakPanelProps) {
     <VStack gap={0} className="orion-i-body orion-i-scope" aria-busy={isPending || undefined} data-pending={isPending || undefined}>
       {view.text.hidden ? null : (
         <Section title="Content">
-          <FieldRow>{literal("text", "Text", false, { icon: icon(Type) })}</FieldRow>
+          {(props.fields.text.runs ?? [view.text.value]).map((value, index) => (
+            <FieldRow key={`text:${index}`}>
+              <LiteralField
+                field="text"
+                index={props.fields.text.runs ? index : undefined}
+                label={index === 0 ? "Text" : `Text ${index + 1}`}
+                icon={icon(Type)}
+                view={{ ...view.text, value }}
+                isNumber={false}
+                isPending={isPending}
+                selectionKey={props.selectionKey}
+                onTweak={onTweak}
+              />
+            </FieldRow>
+          ))}
           {note("text")}
         </Section>
       )}

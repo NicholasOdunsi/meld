@@ -2,6 +2,7 @@
 // comments, {expressions}). HTML and JSX each list their element's children as `Content`; the rules
 // for which text is editable, what the Text field shows and what an edit writes live here, once.
 import type { Binding, Patch } from "./patch";
+import { MAX_TEXT_RUNS } from "./types";
 
 // HTML's own whitespace. A no-break space (&nbsp;) is text, not whitespace, so it is kept.
 const SPACE = /[ \t\n\r\f]+/g;
@@ -31,7 +32,11 @@ export type Run = {
   text: string;
   // The source that replaces from..to so the run renders `value` (already trimmed), keeping the
   // run's own leading and trailing whitespace.
-  write: (value: string) => string;
+  write: (value: string, keepEmpty?: boolean) => string;
+  // An explicit empty literal/marker is an editable slot, unlike layout indentation.
+  emptySlot?: boolean;
+  // Reserved HTML markers must be replaced, including when Code leaves only one slot.
+  marker?: boolean;
 };
 export type Content = {
   // Direct text runs in document order, blank ones included.
@@ -151,33 +156,51 @@ export function nonBlankRuns(content: Content): Run[] {
   return content.runs.filter((run) => !isBlank(run.text));
 }
 
-// The Text field's binding: editable when the element has exactly one non-blank text run and nothing
-// computed; read-only (make: null) with its static text when it has more; null when it holds no text.
+// Which run a tweak edits: the first when it names none, otherwise a whole index below `count`.
+function runIndex(index: number | undefined, count: number): number | null {
+  if (index === undefined) return 0;
+  return Number.isInteger(index) && index >= 0 && index < count ? index : null;
+}
+
+// The Text field's binding: editable when the element's text runs (nonblank or explicitly emptied; up to
+// MAX_TEXT_RUNS, each its own field) have nothing computed beside them; read-only (make: null) with
+// its static text when it has more runs or computed children; null when it holds no text.
 // An element with only blank text takes typed text when it is empty, or when it is a text tag whose
 // text next to other elements was cleared.
 export function textBinding(content: Content): Binding | null {
-  const runs = nonBlankRuns(content);
+  const nonblank = nonBlankRuns(content);
+  const explicit = content.runs.filter((run) => run.emptySlot);
+  // A lone blank literal follows the existing empty-element insertion rules. Multiple explicit
+  // slots, or a slot beside another run, retain their position even when all text is cleared.
+  const runs = nonblank.length > 0 || explicit.length > 1 || explicit.some((run) => run.marker)
+    ? content.runs.filter((run) => run.emptySlot || !isBlank(run.text))
+    : [];
   if (runs.length === 0 && content.dynamic === 0) {
     if (!content.insert || (content.elements > 0 && !content.textTag))
       return null;
     const insert = content.insert;
     return {
       value: "",
-      make: (input) => insert(trimEdges(input)),
+      make: (input, index) =>
+        runIndex(index, 1) === null ? null : insert(trimEdges(input)),
     };
   }
-  const shown = runs.length > 0 ? collapse(runs[0].text) : "";
-  if (runs.length !== 1 || content.dynamic > 0)
-    return { value: shown === "" ? "…" : `${shown} …`, make: null };
-  const run = runs[0];
-  if (content.preserve && shown !== trimEdges(run.text))
-    return { value: shown, make: null };
-  return {
-    value: shown,
-    make: (input) => ({
-      from: run.from,
-      to: run.to,
-      value: run.write(trimEdges(input)),
-    }),
+  const shown = runs.map((run) => collapse(run.text));
+  const first = shown[0] ?? "";
+  const readOnly = { value: first === "" ? "…" : `${first} …`, make: null };
+  if (runs.length > MAX_TEXT_RUNS || content.dynamic > 0) return readOnly;
+  // Whitespace shown as written: editable only when every run reads the same collapsed.
+  if (content.preserve && runs.some((run, i) => shown[i] !== trimEdges(run.text)))
+    return runs.length === 1 ? { value: first, make: null } : readOnly;
+  const binding: Binding = {
+    value: first,
+    make: (input, index) => {
+      const at = runIndex(index, runs.length);
+      if (at === null) return null;
+      const run = runs[at];
+      return { from: run.from, to: run.to, value: run.write(trimEdges(input), runs.length > 1 || run.emptySlot) };
+    },
   };
+  if (runs.length > 1) binding.runs = shown;
+  return binding;
 }

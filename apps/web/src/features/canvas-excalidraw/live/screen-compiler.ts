@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { ScreenFilesSchema } from "@meld/screen-runtime/source";
+import { MAX_SCREEN_SOURCE_BYTES, ScreenFilesSchema } from "@meld/screen-runtime/source";
 import type { CompileResult } from "@meld/screen-runtime";
 import type { ScreenSource } from "@meld/screen-runtime/source";
-import { FIELDS, type Files, type Inspection, type Tweak, type EditResult } from "@meld/screen-runtime/edit/types";
+import { FIELDS, MAX_TEXT_RUNS, type Files, type Inspection, type Tweak, type EditResult } from "@meld/screen-runtime/edit/types";
 import type { Calls, SourceRequest } from "./source-protocol-types";
 
 export type ScreenCompiler = {
@@ -19,8 +19,10 @@ const UNAVAILABLE = "This browser could not start the screen editor.";
 const idSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const operationSchema = z.enum(["compile", "inspect", "tweak", "links"]);
 const fieldState = z.object({ editable: z.boolean(), value: z.string().nullable() }).strict();
+// Only text may list its runs: 2 to MAX_TEXT_RUNS strings, each no longer than a screen's source.
+const textState = fieldState.extend({ runs: z.array(z.string().max(MAX_SCREEN_SOURCE_BYTES)).min(2).max(MAX_TEXT_RUNS).optional() }).strict();
 // Built from the edit engine's own field list, so a new field can never be silently rejected here.
-const inspection = z.object(Object.fromEntries(FIELDS.map((field) => [field, fieldState])) as Record<(typeof FIELDS)[number], typeof fieldState>).strict().nullable();
+const inspection = z.object({ ...Object.fromEntries(FIELDS.map((field) => [field, fieldState])) as Record<(typeof FIELDS)[number], typeof fieldState>, text: textState }).strict().nullable();
 const links = z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/)).max(100);
 const compile = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), screen: z.object({ kind: z.enum(["html", "react"]), styles: z.array(z.string()), scripts: z.array(z.string()), html: z.string(), links }).strict() }).strict(),

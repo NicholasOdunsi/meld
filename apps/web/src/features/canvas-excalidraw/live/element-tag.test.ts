@@ -42,8 +42,8 @@ describe("remapTag", () => {
     expect(to("<mainb>Hi</main>")).toBeNull();
     expect(to("<main><b>Hi</main>")).toBeNull();
   });
-  it("cannot place an insertion exactly where the element starts, but places one at its end", () => {
-    expect(to("<main>NEW<b>Hi</b></main>")).toBeNull();
+  it("places an insertion at the start before the element, and one at its end after it", () => {
+    expect(to("<main>NEW<b>Hi</b></main>")).toBe("a.html:9:18");
     expect(to("<main><b>Hi</b>NEW</main>")).toBe(tag);
   });
   it("is null when the element is gone, or the file is", () => {
@@ -120,4 +120,16 @@ it("clearing the run next to the span keeps the h2 editable: typing again needs 
   expect(spanNow).toBe(range(after, "<span", "</span>"));
   expect(remapTag(typed.files, cleared.files, typedH2)).toBe(clearedH2);
   expect(remapTag(cleared.files, files, clearedH2)).toBe(h2);
+});
+
+
+it("keeps a picked child through inserting text at its start and undoing that insert", () => {
+  for (const child of ['<span>LIMITS.</span>', '<br>']) {
+    const before = `<h1>${child}</h1>`;
+    const after = `<h1>RIDE ${child}</h1>`;
+    const oldTag = `index.html:4:${4 + child.length}`;
+    const nextTag = `index.html:9:${9 + child.length}`;
+    expect(remapTag({ "index.html": before }, { "index.html": after }, oldTag)).toBe(nextTag);
+    expect(remapTag({ "index.html": after }, { "index.html": before }, nextTag)).toBe(oldTag);
+  }
 });

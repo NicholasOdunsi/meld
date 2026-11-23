@@ -40,6 +40,7 @@ const properties: Record<Exclude<Field, "text">, string> = {
   width: "width",
   height: "height",
 };
+const EMPTY_TEXT_RUN = "orion-text-run";
 const rawText = new Set([
   "style",
   "script",
@@ -155,7 +156,16 @@ function contentOf(source: string, node: Element): Content {
   // Elements seen before each run, to know whether one follows it.
   const before = new Map<Run, number>();
   for (const child of node.childNodes) {
-    if (child.nodeName === "#comment") continue;
+    if (child.nodeName === "#comment") {
+      if ("data" in child && child.data === EMPTY_TEXT_RUN && child.sourceCodeLocation) {
+        const at = child.sourceCodeLocation;
+        content.runs.push({
+          from: at.startOffset, to: at.endOffset, text: "", emptySlot: true, marker: true,
+          write: (value) => value === "" ? `<!--${EMPTY_TEXT_RUN}-->` : htmlText(value),
+        });
+      }
+      continue;
+    }
     if (child.nodeName !== "#text" || !("value" in child)) {
       content.elements += 1;
       continue;
@@ -167,12 +177,13 @@ function contentOf(source: string, node: Element): Content {
     }
     const from = at.startOffset,
       to = at.endOffset;
-    const { lead, trail } = edges(source.slice(from, to));
+    // Decoded edge whitespace includes character references such as &#32;.
+    const { lead, trail } = edges(child.value);
     const run: Run = {
       from,
       to,
       text: child.value,
-      write: (value) => lead + htmlText(value) + trail,
+      write: (value, keepEmpty) => lead + (value === "" && keepEmpty ? `<!--${EMPTY_TEXT_RUN}-->` : htmlText(value)) + trail,
     };
     before.set(run, content.elements);
     content.runs.push(run);
@@ -180,14 +191,20 @@ function contentOf(source: string, node: Element): Content {
   if (takesText(node) && location.endTag && location.startTag) {
     // Only used when every run is blank: typing goes into the first one.
     const blank = content.runs[0];
+    const raw = blank ? source.slice(blank.from, blank.to) : "";
+    const follows = !!blank && content.elements > before.get(blank)!;
     const at = blank
-      ? blank.from +
-        blankInsertOffset(
-          source.slice(blank.from, blank.to),
-          content.elements > before.get(blank)!,
-        )
+      ? blank.from + blankInsertOffset(raw, follows)
       : location.startTag.endOffset;
-    content.insert = (value) => ({ from: at, to: at, value: htmlText(value) });
+    // Typed after a line break's indentation, the text would touch the element after it
+    // ("\n    NEW<span>" reads "NEWRIDE?"): one space keeps them apart. Before a <br> or an end
+    // tag that space collapses away, so it is harmless there.
+    const gap = follows && /[\r\n]/.test(raw) ? " " : "";
+    content.insert = (value) => ({
+      from: at,
+      to: at,
+      value: value === "" ? "" : htmlText(value) + gap,
+    });
   }
   return content;
 }

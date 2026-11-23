@@ -376,3 +376,76 @@ it("commits edited mixed-content text once", () => {
   fireEvent.keyDown(text, { key: "Enter" });
   expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "NEW" });
 });
+
+
+it("offers one field per text run and commits the selected run only", () => {
+  const { onTweak } = setup({ fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND"] } }) });
+  expect(number("Text")).toHaveValue("RIDE");
+  const second = number("Text 2");
+  expect(second).toHaveValue("BEYOND");
+  fireEvent.change(second, { target: { value: "FURTHER" } });
+  fireEvent.keyDown(second, { key: "Enter" });
+  fireEvent.blur(second);
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "FURTHER", index: 1 });
+});
+
+it("keeps each text run's node, focus and pending state through refresh and undo", () => {
+  const onTweak = vi.fn();
+  const props: TweakPanelProps = {
+    selectionKey: "heading", fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND"] } }),
+    computed: COMPUTED, used: [], onTweak,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const first = number("Text");
+  const second = number("Text 2");
+  second.focus();
+  fireEvent.change(second, { target: { value: "FURTHER" } });
+  fireEvent.keyDown(second, { key: "Enter" });
+  rerender(<TweakPanel {...props} isPending />);
+  fireEvent.change(first, { target: { value: "GO" } });
+  fireEvent.blur(first);
+  expect(onTweak).toHaveBeenCalledTimes(1);
+  expect(number("Text 2")).toBe(second);
+  expect(document.activeElement).toBe(second);
+  rerender(<TweakPanel {...props} fields={fields({ text: { value: "RIDE", runs: ["RIDE", "FURTHER"] } })} />);
+  expect(second).toHaveValue("FURTHER");
+  expect(number("Text")).toBe(first);
+  expect(first).toHaveValue("GO");
+  rerender(<TweakPanel {...props} />);
+  expect(second).toHaveValue("BEYOND");
+  rerender(<TweakPanel {...props} selectionKey="another-heading" />);
+  expect(first).toHaveValue("RIDE");
+  expect(second).toHaveValue("BEYOND");
+});
+
+it("does not commit an untouched run and sends index zero for the first of several runs", () => {
+  const { onTweak } = setup({ fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND", "LIMITS"] } }) });
+  for (const name of ["Text", "Text 2", "Text 3"]) fireEvent.blur(number(name));
+  expect(onTweak).not.toHaveBeenCalled();
+  fireEvent.change(number("Text"), { target: { value: "CHASE" } });
+  fireEvent.blur(number("Text"));
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "CHASE", index: 0 });
+});
+
+
+it("keeps a cleared run in place so it can be typed into again", () => {
+  const onTweak = vi.fn();
+  const props: TweakPanelProps = {
+    fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND"] } }),
+    computed: COMPUTED, used: [], onTweak, selectionKey: "hero",
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const first = number("Text");
+  const second = number("Text 2");
+  fireEvent.change(first, { target: { value: "" } });
+  fireEvent.blur(first);
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "text", value: "", index: 0 });
+  rerender(<TweakPanel {...props} fields={fields({ text: { value: "", runs: ["", "BEYOND"] } })} />);
+  expect(number("Text")).toBe(first);
+  expect(first).toBeEnabled();
+  expect(number("Text 2")).toBe(second);
+  expect(second).toHaveValue("BEYOND");
+  fireEvent.change(first, { target: { value: "CHASE" } });
+  fireEvent.keyDown(first, { key: "Enter" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "text", value: "CHASE", index: 0 });
+});

@@ -32,11 +32,16 @@ describe("JSX literal editing", () => {
       }),
     ).toBeNull();
   });
-  it("rejects computed, nested and mixed text", () => {
-    for (const text of ["{name}", 'hi {"x"}'])
+  it("rejects computed text, and shows two literal runs as two runs", () => {
+    for (const text of ["{name}", 'hi {"x"} {name}'])
       expect(locate("<b>" + text + "</b>")?.inspect().text.editable).toBe(
         false,
       );
+    expect(locate('<b>hi {"x"}</b>')?.inspect().text).toEqual({
+      editable: true,
+      value: "hi",
+      runs: ["hi", "x"],
+    });
   });
   it("preserves unrelated styles and multiline comments", () => {
     const source =
@@ -236,14 +241,15 @@ describe("JSX: one text run next to other children", () => {
     });
     expect(write(source, "A & B")).toBe('<p>{"A & B "}<i>x</i></p>');
   });
-  it("shows computed or several runs read-only with their static text", () => {
+  it("shows computed text read-only with its static text", () => {
     expect(text("<p>Hi {name}</p>")).toEqual({
       editable: false,
       value: "Hi …",
     });
     expect(text("<p>{name}</p>")).toEqual({ editable: false, value: "…" });
     expect(text("<p>{`Hi`}</p>")).toEqual({ editable: false, value: "…" });
-    expect(text("<h1>RIDE<br/>BEYOND<br/><span>x</span></h1>")).toEqual({
+    // Several runs next to computed text stay read-only too.
+    expect(text("<h1>RIDE<br/>{name}<br/>BEYOND</h1>")).toEqual({
       editable: false,
       value: "RIDE …",
     });
@@ -337,5 +343,76 @@ describe("JSX: one text run next to other children", () => {
     ).not.toThrow();
     // An untouched blur on the cleared field changes nothing.
     expect(write(cleared, "")).toBe(cleared);
+  });
+});
+describe("JSX: several text runs in one element", () => {
+  const whole = (source: string) =>
+    locateJsx(source, { file: "App.tsx", start: 0, end: source.length });
+  const text = (source: string) => whole(source)?.inspect().text;
+  const write = (source: string, value: string, index?: number) => {
+    const patch = whole(source)?.patch({ field: "text", value, index });
+    return patch ? spliceAt(source, patch) : null;
+  };
+  const hero = '<h1>RIDE<br/>BEYOND<br/><span className="accent">LIMITS.</span></h1>';
+  it("reports every run and edits only the chosen one", () => {
+    expect(text(hero)).toEqual({ editable: true, value: "RIDE", runs: ["RIDE", "BEYOND"] });
+    const next = write(hero, "FURTHER", 1)!;
+    expect(next).toBe('<h1>RIDE<br/>{"FURTHER"}<br/><span className="accent">LIMITS.</span></h1>');
+    expect(text(next)).toEqual({ editable: true, value: "RIDE", runs: ["RIDE", "FURTHER"] });
+    expect(() => packages.parser.parse(next, { plugins: ["jsx"] })).not.toThrow();
+    const pasted = "<h1>\n  RIDE<br/>\n  BEYOND<br/>\n  <span>LIMITS.</span>\n</h1>";
+    expect(text(pasted)).toEqual({ editable: true, value: "RIDE", runs: ["RIDE", "BEYOND"] });
+    expect(write(pasted, "FURTHER", 1)).toBe(
+      '<h1>\n  RIDE<br/>\n  {"FURTHER"}<br/>\n  <span>LIMITS.</span>\n</h1>',
+    );
+    expect(write('<p>{"a"}<br/>{"b"}</p>', "c", 1)).toBe('<p>{"a"}<br/>{"c"}</p>');
+  });
+  it("keeps one run as one field and rejects an index that does not exist", () => {
+    const chase = "<h2>CHASE THE<br/><span>FREEDOM.</span></h2>";
+    expect(text(chase)).toEqual({ editable: true, value: "CHASE THE" });
+    expect(write(chase, "x", 1)).toBeNull();
+    for (const index of [2, -1, 0.5, 8]) expect(write(hero, "x", index), String(index)).toBeNull();
+  });
+  it("edits up to eight runs; more are read-only", () => {
+    const lines = (n: number) => `<p>${Array.from({ length: n }, (_, i) => `L${i + 1}`).join("<br/>")}</p>`;
+    expect(text(lines(8))?.runs).toHaveLength(8);
+    expect(text(lines(9))).toEqual({ editable: false, value: "L1 …" });
+  });
+});
+describe("JSX: text tags holding only elements", () => {
+  const whole = (source: string) =>
+    locateJsx(source, { file: "App.tsx", start: 0, end: source.length });
+  const text = (source: string) => whole(source)?.inspect().text;
+  const write = (source: string, value: string) => {
+    const patch = whole(source)?.patch({ field: "text", value });
+    return patch ? spliceAt(source, patch) : null;
+  };
+  it.each([
+    ["<li><a>Home</a></li>", '<li>{"NEW"}<a>Home</a></li>'],
+    ['<a><img src="x"/></a>', '<a>{"NEW"}<img src="x"/></a>'],
+  ])("shows an empty Text field and types before the child: %j", (source, typed) => {
+    expect(text(source)).toEqual({ editable: true, value: "" });
+    expect(write(source, "NEW")).toBe(typed);
+    expect(() => packages.parser.parse(typed, { plugins: ["jsx"] })).not.toThrow();
+    expect(text(typed)).toEqual({ editable: true, value: "NEW" });
+  });
+  it("never offers one on audio", () => {
+    for (const source of ["<audio></audio>", '<audio><source src="a.mp3"/></audio>'])
+      expect(text(source), source).toEqual({ editable: false, value: null });
+  });
+});
+
+describe("empty JSX run separators", () => {
+  it.each([
+    ["<p>First<b>x</b> Second</p>", 1, '<p>First<b>x</b>{" NEW"}</p>'],
+    ["<p>First <b>x</b>Second</p>", 0, '<p>{"NEW "}<b>x</b>Second</p>'],
+    ["<p>First<b>x</b> Second <i>y</i></p>", 1, '<p>First<b>x</b>{" NEW "}<i>y</i></p>'],
+  ] as const)("retains whitespace on its original side: %s", (source, index, expected) => {
+    const whole = (source: string) => locateJsx(source, { file: "App.tsx", start: 0, end: source.length });
+    const clear = whole(source)!.patch({ field: "text", value: "", index })!;
+    const empty = spliceAt(source, clear);
+    const patch = whole(empty)!.patch({ field: "text", value: "NEW", index })!;
+    expect(spliceAt(empty, patch)).toBe(expected);
+    expect(() => packages.parser.parse(empty, { plugins: ["jsx"] })).not.toThrow();
   });
 });

@@ -2,14 +2,16 @@ import { z } from "zod";
 import { compileScreen, extractLinks } from "@meld/screen-runtime";
 import { ScreenFilesSchema, ScreenSourceSchema, MAX_SCREEN_SOURCE_BYTES } from "@meld/screen-runtime/source";
 import { applyTweak, inspectElement } from "@meld/screen-runtime/edit";
-import { FIELDS } from "@meld/screen-runtime/edit/types";
+import { FIELDS, MAX_TEXT_RUNS } from "@meld/screen-runtime/edit/types";
 import type { SourceRequest, SourceReply, SourceSuccess } from "./source-protocol-types";
 
 const id = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const op = z.enum(["compile", "inspect", "tweak", "links"]);
 const identity = z.object({ id, op });
 const src = z.string().min(1).max(155);
-const tweak = z.object({ field: z.enum(FIELDS), value: z.string().max(MAX_SCREEN_SOURCE_BYTES) }).strict();
+// `index` picks one of the element's text runs: a whole number from 0 to MAX_TEXT_RUNS - 1, on text only.
+const tweak = z.object({ field: z.enum(FIELDS), value: z.string().max(MAX_SCREEN_SOURCE_BYTES), index: z.number().int().min(0).max(MAX_TEXT_RUNS - 1).optional() }).strict()
+  .refine((t) => t.index === undefined || t.field === "text", { message: "Only text takes a run index" });
 const requestSchema = z.discriminatedUnion("op", [
   z.object({ id, op: z.literal("compile"), source: ScreenSourceSchema, tagElements: z.boolean() }).strict(),
   z.object({ id, op: z.literal("inspect"), files: ScreenFilesSchema, src }).strict(),

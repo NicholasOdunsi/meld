@@ -42,7 +42,7 @@ describe("text runs", () => {
   ])("reads a JSX text child the way Babel does: %j", (text) => {
     expect(jsxTextValue(text)).toBe(babelText(text));
   });
-  it("is read-only with a reason for several runs or computed children", () => {
+  it("binds several runs, and is read-only for more than eight or computed children", () => {
     const run = (text: string) => ({ from: 0, to: 0, text, write: (v: string) => v });
     const content = (over: Partial<Content>): Content => ({
       runs: [],
@@ -53,7 +53,14 @@ describe("text runs", () => {
       textTag: false,
       ...over,
     });
-    expect(textBinding(content({ runs: [run("a"), run("b")] }))).toMatchObject({ value: "a …", make: null });
+    const two = textBinding(content({ runs: [run("a"), run(" "), run("b")] }))!;
+    expect(two).toMatchObject({ value: "a", runs: ["a", "b"] });
+    expect(two.make!("x", 1)).toEqual({ from: 0, to: 0, value: "x" });
+    expect(two.make!("x", 2)).toBeNull();
+    const nine = Array.from({ length: 9 }, (_, i) => run(String(i)));
+    expect(textBinding(content({ runs: nine }))).toMatchObject({ value: "0 …", make: null });
+    expect(textBinding(content({ runs: nine.slice(1) }))?.runs).toHaveLength(8);
+    expect(textBinding(content({ runs: [run("a")] }))).not.toHaveProperty("runs");
     expect(textBinding(content({ dynamic: 1 }))).toMatchObject({ value: "…", make: null });
     expect(textBinding(content({ elements: 2, runs: [run(" ")] }))).toBeNull();
     expect(textBinding(content({}))).toBeNull();

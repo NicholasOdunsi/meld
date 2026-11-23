@@ -16,8 +16,8 @@ export function parseElementTag(value: string): ElementTag | null {
 // The edit is found by trimming the text both versions share at the start and at the end;
 // what is left is the one changed region. If that region lies wholly after the element the
 // tag is unchanged, wholly before it the tag moves by the change in length, and inside it
-// only the end moves. An edit that crosses an edge of the element, or that inserts exactly
-// where the element starts (it could be going before it or inside it), cannot be placed: null.
+// only the end moves. An insertion exactly at its start goes before it and shifts it;
+// an edit that crosses an edge of the element cannot be placed: null.
 //
 // Trimming is ambiguous when the inserted or removed text repeats its neighbours (adding
 // "<p>x</p>" before "<b>" can read as adding "p>x</p><" inside it). So the region is placed
@@ -46,7 +46,6 @@ export function remapTag(oldFiles: Record<string, string>, newFiles: Record<stri
   const elementText = before.slice(tag.start, tag.end);
   const place = (from: number, to: number): Placed | null => {
     if (from >= tag.end) return { tag: src, sameText: after.slice(tag.start, tag.end) === elementText };
-    if (from === to && from === tag.start) return null;
     // Nothing of the element survives: it was replaced by something else.
     if (from <= tag.start && to >= tag.end) return null;
     const moved = (start: number, end: number): string | null => (end > start ? `${tag.file}:${start}:${end}` : null);

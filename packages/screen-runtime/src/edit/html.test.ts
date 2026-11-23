@@ -249,15 +249,6 @@ describe("one text run next to other children", () => {
       "<p>A &amp; &lt;b&gt; <i>x</i></p>",
     );
   });
-  it("shows several runs read-only, first run first", () => {
-    for (const source of [
-      "<h1>RIDE<br>BEYOND<br><span>LIMITS.</span></h1>",
-      "<h1>\n  RIDE<br>\n  BEYOND<br>\n  <span>LIMITS.</span>\n</h1>",
-    ]) {
-      expect(text(source)).toEqual({ editable: false, value: "RIDE …" });
-      expect(node(source)!.patch({ field: "text", value: "x" })).toBeNull();
-    }
-  });
   it("keeps whitespace-preserving text read-only unless editing it is lossless", () => {
     expect(text("<pre>a  b</pre>")).toEqual({ editable: false, value: "a b" });
     const code = "<pre><code>x\n  y</code></pre>";
@@ -330,12 +321,12 @@ describe("one text run next to other children", () => {
     [
       '<h2>\n    READY TO <span class="accent">RIDE?</span>\n  </h2>',
       '<h2>\n     <span class="accent">RIDE?</span>\n  </h2>',
-      '<h2>\n     NEW<span class="accent">RIDE?</span>\n  </h2>',
+      '<h2>\n     NEW <span class="accent">RIDE?</span>\n  </h2>',
     ],
     [
       "<h2>\n  CHASE THE<br>\n  <span>FREEDOM.</span>\n</h2>",
       "<h2>\n  <br>\n  <span>FREEDOM.</span>\n</h2>",
-      "<h2>\n  NEW<br>\n  <span>FREEDOM.</span>\n</h2>",
+      "<h2>\n  NEW <br>\n  <span>FREEDOM.</span>\n</h2>",
     ],
     [
       '<a class="logo">VELO<span>X</span></a>',
@@ -358,4 +349,113 @@ describe("one text run next to other children", () => {
     expect(patch.to).toBeLessThanOrEqual(cleared.lastIndexOf("</"));
     expect(edit(cleared, "text", "")).toBe(cleared);
   });
+});
+describe("several text runs in one element", () => {
+  const inspect = (source: string) => node(source)?.inspect().text;
+  const write = (source: string, value: string, index?: number) => {
+    const patch = node(source)?.patch({ field: "text", value, index });
+    return patch ? spliceAt(source, patch) : null;
+  };
+  const hero = '<h1>RIDE<br>BEYOND<br><span class="accent">LIMITS.</span></h1>';
+  const pasted =
+    '<h1>\n      RIDE<br>\n      BEYOND<br>\n      <span class="accent">LIMITS.</span>\n    </h1>';
+  it("reports every run of the hero heading, in order, and edits only the chosen one", () => {
+    for (const source of [hero, pasted, "<h1>RIDE<br>BEYOND<br>\n        <span>LIMITS.</span>\n      </h1>"])
+      expect(inspect(source)).toEqual({ editable: true, value: "RIDE", runs: ["RIDE", "BEYOND"] });
+    expect(write(hero, "FURTHER", 1)).toBe(
+      '<h1>RIDE<br>FURTHER<br><span class="accent">LIMITS.</span></h1>',
+    );
+    expect(write(hero, "GO", 0)).toBe(
+      '<h1>GO<br>BEYOND<br><span class="accent">LIMITS.</span></h1>',
+    );
+    // The pasted page keeps its indentation; only the second line changes.
+    expect(write(pasted, "FURTHER", 1)).toBe(
+      '<h1>\n      RIDE<br>\n      FURTHER<br>\n      <span class="accent">LIMITS.</span>\n    </h1>',
+    );
+    expect(inspect(write(pasted, "FURTHER", 1)!)).toEqual({
+      editable: true,
+      value: "RIDE",
+      runs: ["RIDE", "FURTHER"],
+    });
+    // A message without an index edits the first run (the one `value` shows).
+    expect(write(hero, "GO")).toBe(write(hero, "GO", 0));
+  });
+  it("keeps a heading with one run as one Text field, without runs", () => {
+    const chase = "<h2>CHASE THE<br><span>FREEDOM.</span></h2>";
+    expect(inspect(chase)).toEqual({ editable: true, value: "CHASE THE" });
+    expect(write(chase, "RUN TO", 0)).toBe("<h2>RUN TO<br><span>FREEDOM.</span></h2>");
+    expect(write(chase, "RUN TO", 1)).toBeNull();
+  });
+  it("rejects a run index that does not exist", () => {
+    for (const index of [2, 7, -1, 1.5, 8])
+      expect(write(hero, "x", index), String(index)).toBeNull();
+  });
+  it("writes each run's entities and keeps its own whitespace", () => {
+    const source = "<p>\n  Fish &amp; Chips<br>\n  <i>x</i> and more\n</p>";
+    expect(inspect(source)).toEqual({ editable: true, value: "Fish & Chips", runs: ["Fish & Chips", "and more"] });
+    expect(write(source, "A < B", 1)).toBe("<p>\n  Fish &amp; Chips<br>\n  <i>x</i> A &lt; B\n</p>");
+  });
+  it("edits up to eight runs; more are read-only with the first run shown", () => {
+    const lines = (n: number) => `<p>${Array.from({ length: n }, (_, i) => `L${i + 1}`).join("<br>")}</p>`;
+    expect(inspect(lines(8))).toEqual({
+      editable: true,
+      value: "L1",
+      runs: ["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8"],
+    });
+    expect(write(lines(8), "last", 7)).toBe(lines(7).replace("</p>", "<br>last</p>"));
+    expect(inspect(lines(9))).toEqual({ editable: false, value: "L1 …" });
+    expect(write(lines(9), "x", 0)).toBeNull();
+  });
+  it("keeps whitespace-preserving runs editable only when every run is lossless", () => {
+    expect(inspect("<pre>a<br>b</pre>")).toEqual({ editable: true, value: "a", runs: ["a", "b"] });
+    expect(write("<pre>a<br>b</pre>", "c", 1)).toBe("<pre>a<br>c</pre>");
+    expect(inspect("<pre>a<br>b  c</pre>")).toEqual({ editable: false, value: "a …" });
+  });
+  it("only text takes an index", () => {
+    expect(node(hero)!.patch({ field: "width", value: "20", index: 0 })).toBeNull();
+  });
+});
+describe("text tags holding only elements", () => {
+  const text = (source: string) => node(source)?.inspect().text;
+  it.each([
+    ["<li><a>Home</a></li>", "<li>NEW<a>Home</a></li>"],
+    ["<a><img></a>", "<a>NEW<img></a>"],
+    ['<li>\n  <a href="#">Home</a>\n</li>', '<li>\n  NEW <a href="#">Home</a>\n</li>'],
+  ])("shows an empty Text field and types before the child: %j", (source, typed) => {
+    expect(text(source)).toEqual({ editable: true, value: "" });
+    expect(edit(source, "text", "NEW")).toBe(typed);
+    // Valid markup: the child is still a child, and the element now reads the typed text.
+    expect(text(typed)).toEqual({ editable: true, value: "NEW" });
+    expect(edit(source, "text", "")).toBe(source);
+  });
+  it("never offers one on audio", () => {
+    for (const source of ["<audio></audio>", '<audio><source src="a.mp3"></audio>', "<audio>\n  <source>\n</audio>"])
+      expect(text(source), source).toEqual({ editable: false, value: null });
+  });
+});
+
+describe("encoded whitespace around direct text", () => {
+  it.each(["&#32;", "&#x20;", "&#9;", "&#10;"])("keeps %s separators next to inline children", (space) => {
+    const source = `<h2>FEATURED${space}<span>BIKES.</span></h2>`;
+    const next = edit(source, "text", "NEW");
+    expect(next).toMatch(/NEW[ \t\n]<span>BIKES\.<\/span>/);
+    expect(node(next!)?.inspect().text).toEqual({ editable: true, value: "NEW" });
+  });
+});
+
+describe("reserved empty-run marker", () => {
+  it("ignores author comments and recognizes only the exact reserved marker", () => {
+    const source = "<h1>A<!-- comment --><br><!-- orion-text-run --><!--orion-text-run-extra-->B</h1>";
+    expect(node(source)?.inspect().text).toEqual({ editable: true, value: "A", runs: ["A", "B"] });
+    const slots = "<h1>A<br><!--orion-text-run--><span>x</span></h1>";
+    expect(node(slots)?.inspect().text).toEqual({ editable: true, value: "A", runs: ["A", ""] });
+    const patch = node(slots)?.patch({ field: "text", value: "", index: 1 });
+    expect(patch && spliceAt(slots, patch)).toBe(slots);
+  });
+});
+
+it("replaces a lone reserved HTML marker after other runs were removed in Code", () => {
+  const source = "<h1><!--orion-text-run--></h1>";
+  expect(edit(source, "text", "NEW")).toBe("<h1>NEW</h1>");
+  expect(node(edit(source, "text", "NEW")!)?.inspect().text).toEqual({ editable: true, value: "NEW" });
 });

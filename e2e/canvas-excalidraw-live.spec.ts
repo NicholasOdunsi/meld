@@ -1264,9 +1264,42 @@ test("text next to a span is editable on its own, undoes, and leaves the span pi
   await expect(app.locator("h2").first()).toHaveText("NEW RIDES.");
   await expect.poll(() => computed(app.locator("h2 span.accent").first(), "color")).toBe("rgb(255, 90, 31)");
 
-  // Two text runs (RIDE<br>BEYOND<br>...) are shown read-only with the reason, not hidden.
+  // Each direct text run is editable; the styled child remains its own element.
   await app.locator("h1").click({ position: { x: 4, y: 4 } });
-  await expect(text).toHaveValue("RIDE …");
-  await expect(text).toBeDisabled();
-  await expect(panel.getByText("Set by the screen's code. Change it in Code.").first()).toBeVisible();
+  const second = panel.getByRole("textbox", { name: "Text 2", exact: true });
+  await expect(text).toHaveValue("RIDE");
+  await expect(text).toBeEnabled();
+  await expect(second).toHaveValue("BEYOND");
+  await second.fill("FURTHER");
+  await second.press("Enter");
+  await expect(app.locator("h1")).toHaveText("RIDEFURTHERLIMITS.");
+  await expect(app.locator("h1 span")).toHaveText("LIMITS.");
+  await expect(app.locator("h1 br")).toHaveCount(2);
+  await expect(second).toHaveValue("FURTHER");
+  await expect.poll(() => computed(app.locator("h1 span"), "color")).toBe("rgb(255, 90, 31)");
+  await page.screenshot({ path: ".context/fu-runs-edited.png", fullPage: true });
+  await pillButton(page, "Undo").click();
+  await expect(app.locator("h1")).toHaveText("RIDEBEYONDLIMITS.");
+  await expect(second).toHaveValue("BEYOND");
+  await pillButton(page, "Redo").click();
+  await expect(app.locator("h1")).toHaveText("RIDEFURTHERLIMITS.");
+  await expect(second).toHaveValue("FURTHER");
+  // Clearing either line keeps its slot, so typing can resume without Undo.
+  await text.fill("");
+  await text.press("Enter");
+  await expect(text).toHaveValue("");
+  await expect(second).toHaveValue("FURTHER");
+  await text.fill("RIDE");
+  await text.press("Enter");
+  await expect(app.locator("h1")).toHaveText("RIDEFURTHERLIMITS.");
+  await second.fill("");
+  await second.press("Enter");
+  await expect(second).toHaveValue("");
+  await expect(text).toHaveValue("RIDE");
+  await second.fill("AGAIN");
+  await second.press("Enter");
+  await expect(app.locator("h1")).toHaveText("RIDEAGAINLIMITS.");
+  await app.locator("h1 span").click();
+  await expect(text).toHaveValue("LIMITS.");
+  await expect(second).toHaveCount(0);
 });

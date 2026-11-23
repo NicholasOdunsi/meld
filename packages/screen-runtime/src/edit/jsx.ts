@@ -116,6 +116,14 @@ function preserves(source: string, path: NodePath<t.JSXElement>): boolean {
   }
   return false;
 }
+// An emptied run must remember which whitespace was before/after its text. The literal alone
+// cannot distinguish a leading separator from a trailing one once its text has been removed.
+function runLiteral(value: string, lead: string, trail: string, keepEmpty?: boolean): string {
+  const text = lead + value + trail;
+  if (value === "" && keepEmpty && text !== "")
+    return `{${JSON.stringify(text)}/*orion-text-run:${lead.length}*/}`;
+  return text === "" && !keepEmpty ? "" : `{${JSON.stringify(text)}}`;
+}
 function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
   const node = path.node;
   const content: Content = {
@@ -159,13 +167,8 @@ function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
         from,
         to,
         text,
-        write: (value) => {
-          const literal = inner.lead + value + inner.trail;
-          return (
-            keepLead +
-            (literal === "" ? "" : `{${JSON.stringify(literal)}}`) +
-            keepTrail
-          );
+        write: (value, keepEmpty) => {
+          return keepLead + runLiteral(value, inner.lead, inner.trail, keepEmpty) + keepTrail;
         },
       };
       content.runs.push(run);
@@ -179,14 +182,18 @@ function contentOf(source: string, path: NodePath<t.JSXElement>): Content {
     ) {
       const text = child.expression.value;
       const inner = edges(text);
+      const marker = /\/\*orion-text-run:(\d+)\*\/\s*\}$/.exec(source.slice(from, to));
+      const split = marker && isBlank(text) ? Number(marker[1]) : null;
+      if (split !== null && Number.isSafeInteger(split) && split <= text.length) {
+        inner.lead = text.slice(0, split);
+        inner.trail = text.slice(split);
+      }
       const run: Run = {
         from,
         to,
         text,
-        write: (value) => {
-          const literal = inner.lead + value + inner.trail;
-          return literal === "" ? "" : `{${JSON.stringify(literal)}}`;
-        },
+        emptySlot: isBlank(text),
+        write: (value, keepEmpty) => runLiteral(value, inner.lead, inner.trail, keepEmpty),
       };
       content.runs.push(run);
       if (isBlank(text))

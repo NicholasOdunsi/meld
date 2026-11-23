@@ -73,6 +73,61 @@ describe("source editing API", () => {
     },
   );
 
+  it("edits one run of a hero heading by index, and rejects a bad index", () => {
+    const page = "<h1>RIDE<br>BEYOND<br><span>LIMITS.</span></h1>";
+    const files = { "index.html": page };
+    const src = tag("index.html", page);
+    expect(inspectElement(files, src)?.text).toEqual({ editable: true, value: "RIDE", runs: ["RIDE", "BEYOND"] });
+    expect(applyTweak(files, src, { field: "text", value: "FURTHER", index: 1 })).toEqual({
+      ok: true,
+      files: { "index.html": "<h1>RIDE<br>FURTHER<br><span>LIMITS.</span></h1>" },
+    });
+    for (const index of [2, 8, -1, 1.5, Number.NaN, "1" as unknown as number])
+      expect(applyTweak(files, src, { field: "text", value: "x", index }), String(index)).toEqual({ ok: false, reason: "not-literal" });
+    expect(applyTweak(files, src, { field: "color", value: "#ffffff", index: 0 })).toEqual({ ok: false, reason: "not-literal" });
+  });
+
+  it.each(["html", "tsx"])("retains empty %s run slots and can refill them", (extension) => {
+    const file = `heading.${extension}`;
+    const br = extension === "html" ? "<br>" : "<br/>";
+    for (const separator of [br, "<i>middle</i>"]) {
+      const initial = `<h1>\n  RIDE ${separator}\n  BEYOND ${br}\n  <span>LIMITS.</span>\n</h1>`;
+      let files = { [file]: initial };
+      const write = (index: number, value: string) => {
+        const result = applyTweak(files, tag(file, files[file]), { field: "text", value, index });
+        if (!result.ok) throw new Error(result.reason);
+        files = result.files;
+        return inspectElement(files, tag(file, files[file]))?.text;
+      };
+      expect(write(0, "")).toEqual({ editable: true, value: "", runs: ["", "BEYOND"] });
+      expect(write(1, "")).toEqual({ editable: true, value: "", runs: ["", ""] });
+      expect(write(1, "FURTHER")).toEqual({ editable: true, value: "", runs: ["", "FURTHER"] });
+      expect(write(0, "GO")).toEqual({ editable: true, value: "GO", runs: ["GO", "FURTHER"] });
+      expect(files[file]).toContain("<span>LIMITS.</span>");
+      expect(files[file]).not.toContain("<!--orion-text-run-->");
+    }
+  });
+
+  it.each(["html", "tsx"])("keeps later run ranges correct after an earlier %s run grows", (extension) => {
+    const file = `heading.${extension}`;
+    const br = extension === "html" ? "<br>" : "<br/>";
+    const original = `<h1>RIDE${br}BEYOND${br}<span>LIMITS.</span></h1>`;
+    const initial = { [file]: original };
+    const first = applyTweak(initial, tag(file, original), { field: "text", value: "RIDE FURTHER", index: 0 });
+    if (!first.ok) throw new Error(first.reason);
+    const grown = first.files[file];
+    expect(inspectElement(first.files, tag(file, grown))?.text.runs).toEqual(["RIDE FURTHER", "BEYOND"]);
+    const second = applyTweak(first.files, tag(file, grown), { field: "text", value: "TOGETHER", index: 1 });
+    if (!second.ok) throw new Error(second.reason);
+    expect(inspectElement(second.files, tag(file, second.files[file]))?.text.runs).toEqual(["RIDE FURTHER", "TOGETHER"]);
+    expect(second.files[file]).toContain("<span>LIMITS.</span>");
+    // Restoring a history snapshot must restore its own run ranges too.
+    const restored = applyTweak(initial, tag(file, original), { field: "text", value: "AGAIN", index: 1 });
+    if (!restored.ok) throw new Error(restored.reason);
+    expect(inspectElement(restored.files, tag(file, restored.files[file]))?.text.runs).toEqual(["RIDE", "AGAIN"]);
+    expect(initial[file]).toBe(original);
+  });
+
   it.each([
     "index.html:0:11",
     "index.html:1:12",

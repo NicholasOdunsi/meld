@@ -88,3 +88,37 @@ describe('inspection replies', () => {
     await expect(pending).rejects.toThrow();
   });
 });
+describe('inspection replies with text runs', () => {
+  const reply = async (text: unknown, extra: Record<string, unknown> = {}) => {
+    const fake=fakeWorker();const compiler=createWorkerCompiler(()=>fake.worker);
+    const pending=compiler.inspect(source.files,'index.html:0:9');
+    const result={...Object.fromEntries(FIELDS.map(field=>[field,{editable:true,value:'1'}])),text,...extra};
+    fake.handlers.message({data:{id:0,op:'inspect',result}});
+    return pending;
+  };
+  it('accepts the hero heading the editor really produces, and replies without runs', async()=>{
+    const files={'index.html':'<h1>RIDE<br>BEYOND<br><span>LIMITS.</span></h1>'};
+    const fake=fakeWorker();const compiler=createWorkerCompiler(()=>fake.worker);
+    const src=`index.html:0:${files['index.html'].length}`;
+    const pending=compiler.inspect(files,src);
+    const result=inspectElement(files,src);
+    expect(result?.text.runs).toEqual(['RIDE','BEYOND']);
+    fake.handlers.message({data:{id:0,op:'inspect',result}});
+    await expect(pending).resolves.toEqual(result);
+    await expect(reply({editable:true,value:'x'})).resolves.toMatchObject({text:{editable:true,value:'x'}});
+    await expect(reply({editable:true,value:'a',runs:Array.from({length:8},(_,i)=>`r${i}`)})).resolves.toMatchObject({text:{runs:expect.any(Array)}});
+  });
+  it.each([
+    ['one run', {editable:true,value:'a',runs:['a']}],
+    ['nine runs', {editable:true,value:'a',runs:Array.from({length:9},(_,i)=>`r${i}`)}],
+    ['a run that is not text', {editable:true,value:'a',runs:['a',2]}],
+    ['an oversize run', {editable:true,value:'a',runs:['a','x'.repeat(262_145)]}],
+    ['an extra key', {editable:true,value:'a',runs:['a','b'],index:1}],
+    ['runs that are not a list', {editable:true,value:'a',runs:'a,b'}],
+  ])('rejects text with %s', async(_name, text)=>{
+    await expect(reply(text)).rejects.toThrow();
+  });
+  it('rejects runs on any field but text', async()=>{
+    await expect(reply({editable:true,value:'a',runs:['a','b']},{color:{editable:true,value:'#fff',runs:['a','b']}})).rejects.toThrow();
+  });
+});

@@ -9,6 +9,7 @@ import {
   FIELDS,
   type EditResult,
   type Files,
+  MAX_TEXT_RUNS,
   type Inspection,
   type Range,
   type Tweak,
@@ -50,6 +51,15 @@ export function applyTweak(
   const node = locate(files, range);
   if (!node) return { ok: false, reason: "not-found" };
   if (!FIELDS.includes(tweak.field) || typeof tweak.value !== "string")
+    return { ok: false, reason: "not-literal" };
+  // A run index is a whole number below MAX_TEXT_RUNS, and only text has runs.
+  if (
+    tweak.index !== undefined &&
+    (tweak.field !== "text" ||
+      !Number.isInteger(tweak.index) ||
+      tweak.index < 0 ||
+      tweak.index >= MAX_TEXT_RUNS)
+  )
     return { ok: false, reason: "not-literal" };
   const patch = node.patch(tweak);
   if (

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
-import type { Inspection } from "@meld/screen-runtime/edit/types";
+import type { Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import type { ScreenSource } from "@meld/screen-runtime/source";
 import { createEditDraft, type Draft, type Read, type Write } from "./edit-draft";
 import type { LiveController } from "./live-controller";
@@ -271,4 +271,24 @@ describe('the Tweak body through an edit',()=>{
     fireEvent.click(tab);
     expect(s.onTabChange).not.toHaveBeenCalled();
   });
+});
+
+
+it("forwards a run index through the panel and preserves the element for reselection", async () => {
+  const selected = { boardId: 'a', src: 'index.html:0:9', label: 'Hi', epoch: 1, revision: 0, computed: null };
+  const onReselect = vi.fn();
+  const s = setup({ tab: 'tweak', picked: selected, onReselect });
+  vi.mocked(s.compiler.inspect).mockResolvedValue({
+    text: { editable: true, value: 'Hi', runs: ['Hi', 'Bye'] },
+    color: { editable: true, value: null },
+  } as Inspection);
+  vi.mocked(s.compiler.tweak).mockResolvedValue({ ok: true, files: { 'index.html': '<b>Further</b>' } });
+  render(<HandEditPanel {...s.props} />);
+  await screen.findByTestId('tweak-panel');
+  const change: Tweak = { field: 'text', value: 'Further', index: 1 };
+  await act(async () => (tweakProps.at(-1)!.onTweak as (tweak: Tweak) => void)(change));
+  expect(s.compiler.tweak).toHaveBeenCalledExactlyOnceWith(source.files, selected.src, change);
+  expect(s.draft.getState().source.files['index.html']).toBe('<b>Further</b>');
+  expect(onReselect).toHaveBeenCalledExactlyOnceWith('index.html:0:14');
+  expect(s.live.previewDraft).toHaveBeenCalledWith('a', expect.anything(), 1, 'tweak');
 });

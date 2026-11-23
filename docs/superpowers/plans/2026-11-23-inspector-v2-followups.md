@@ -129,9 +129,9 @@ An element like the hero `<h1>RIDE<br>BEYOND<br><span class="accent">LIMITS.</sp
 
 **Carried over from Task 5's review (fix these here, they touch the same code):** (a) in MULTI-LINE HTML, clearing a run next to an inline element and retyping glues the typed text to the element (`\n    READY TO <span>` cleared then typed `NEW` gives `NEW<span>` with no space, rendered `NEWRIDE?`); fix: when the blank run contains a line break and an element follows, write the typed text followed by one space (a space before `<br>` or a closing tag collapses, so it is harmless); add the multi-line test. (b) A zero-width insert exactly at the next sibling's start tag makes `remapTag` (`live/element-tag.ts:49`, `from === to && from === tag.start`) return null for that sibling, so a picked span/br loses its reselection on undo/redo after such an insert; make the remap treat an insert at the sibling's start as shifting it (insert goes BEFORE the sibling), with a test. (c) Add tests for text tags holding only elements (`<li><a>Home</a></li>`, `<a><img></a>`) showing the empty Text field and typing producing valid markup before the child, and an `<audio>` exclusion test.
 
-- [ ] **Step 1: Failing tests:** engine: runs for `RIDE<br>BEYOND<br><span>LIMITS.</span>` (two runs: RIDE, BEYOND) and `CHASE THE<br><span>FREEDOM.</span>` (one run), tweak with `index` rewrites only that run, out-of-range index rejected, >8 runs read-only; schema accepts/rejects (extra fields, non-integer index, oversize runs); panel: N fields for N runs, names `Text`, `Text 2`, editing the second commits `index: 1`, single-run elements unchanged; remap tests; e2e: paste the hero h1 HTML, pick it, two Text fields; change the second to `FURTHER`, the screen updates, the span is untouched, Undo restores.
-- [ ] **Step 2: FAIL. Step 3: Implement. Step 4: PASS** (screen-runtime tests, the canvas folder, typecheck, eslint, check:astryx, the live spec alone, the screen-runtime bundle checks). Screenshot under `.context/fu-runs-*.png` and read it.
-- [ ] **Step 5: Commit** `feat(canvas): every text run in a heading is editable`.
+- [x] **Step 1: Failing tests:** engine: runs for `RIDE<br>BEYOND<br><span>LIMITS.</span>` (two runs: RIDE, BEYOND) and `CHASE THE<br><span>FREEDOM.</span>` (one run), tweak with `index` rewrites only that run, out-of-range index rejected, >8 runs read-only; schema accepts/rejects (extra fields, non-integer index, oversize runs); panel: N fields for N runs, names `Text`, `Text 2`, editing the second commits `index: 1`, single-run elements unchanged; remap tests; e2e: paste the hero h1 HTML, pick it, two Text fields; change the second to `FURTHER`, the screen updates, the span is untouched, Undo restores.
+- [x] **Step 2: FAIL. Step 3: Implement. Step 4: PASS** (screen-runtime tests, the canvas folder, typecheck, eslint, check:astryx, the live spec alone, the screen-runtime bundle checks). Screenshot under `.context/fu-runs-*.png` and read it.
+- [x] **Step 5: Commit** `feat(canvas): every text run in a heading is editable`.
 
 ---
 
@@ -153,3 +153,12 @@ Do not weaken the ctrl+wheel/pinch zoom behaviour from Task 1 (ctrl+wheel/pinch 
 ## Final verification (controller)
 
 Whole-plan review, then `pnpm typecheck`, lint, `check:astryx`, `test:colocation`, `test:workspace`, `pnpm test`, and each canvas e2e spec file alone with a hard timeout; relaunch nothing on port 3107 (the dev server there is live; just ⌘R in the Mac app).
+
+
+## Resume completion — 2026-11-23
+
+Task 6 completed after recovering the interrupted engine draft. The inspector renders Text, Text 2, etc. for up to eight direct text runs, passes a bounded index through the compiler protocol, and keeps field nodes stable during pending edits and undo. Styled child elements remain independently selectable.
+
+Cleared multi-run slots retain their indices and can be retyped. HTML stores an exact inert `<!--orion-text-run-->` placeholder; JSX uses an explicit blank literal, with an inert comment recording the separator split when needed. Retyping removes these placeholders. Ordinary comments and layout indentation do not create fields. HTML entity-encoded separator whitespace is preserved. Inserts exactly before a child shift its source tag, preserving reselection through undo/redo.
+
+Independent whole-plan review found the cleared-slot and encoded-separator defects; a scoped re-review verified their fixes and found no remaining blockers. The final canvas unit suite passed 74 files / 724 tests, runtime passed 19 files / 408 tests (including bundle checks), typecheck and lint passed, and the full `pnpm test` command passed. `check:astryx` still reports only the previously documented unrelated `paste/paste-dialog.css` hardcoded color. Browser live spec passed 35 tests, including multi-run edit, clear/retype, undo/redo and child selection. Full browser sweep results are recorded separately at the end of verification. Screenshot: `.context/fu-runs-edited.png`.
