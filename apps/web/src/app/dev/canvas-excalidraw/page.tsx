@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { isRoomFakeEnabled } from "@/features/rooms/e2e-gate";
+import { readCanvasEditTestState } from "@/features/design/canvas-screen-source-test-actions";
 import { BoardLoader } from "@/features/canvas-excalidraw/board-loader";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -16,6 +18,7 @@ export default async function CanvasExcalidrawPage({ searchParams }: { searchPar
       boardId={board && UUID.test(board) ? board : undefined}
       roomId={room && UUID.test(room) ? room : undefined}
       access={first(params.access) === "view" ? "view" : "edit"}
+      testPersistence={isRoomFakeEnabled()?readCanvasEditTestState:undefined}
     />
   );
 }

@@ -33,6 +33,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    // Isolated Playwright and native-preview builds are generated too.
+    ".next-*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
@@ -42,6 +44,8 @@ const eslintConfig = defineConfig([
     ".next-e2e/**",
     ".next-canvas-next/**",
     ".next-canvas-excalidraw/**",
+    // Built from packages/screen-runtime/runtime/entry.ts and pinned vendors.
+    "public/screen-runtime/runtime.js",
   ]),
 ]);
 

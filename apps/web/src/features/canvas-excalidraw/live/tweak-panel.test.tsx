@@ -1,0 +1,451 @@
+// @vitest-environment jsdom
+import { afterEach, expect, it, vi } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import type { Field, FieldState } from "@meld/screen-runtime/edit/types";
+import type { Computed } from "./live-messages";
+import { TweakPanel, type TweakPanelProps } from "./tweak-panel";
+afterEach(cleanup);
+
+const FIELDS: readonly Field[] = [
+  "text", "color", "backgroundColor", "fontSize", "fontWeight", "fontFamily",
+  "padding", "gap", "borderRadius", "width", "height",
+];
+const COMPUTED: Computed = {
+  fontFamily: 'ui-monospace, "SF Mono", monospace',
+  fontSize: "16",
+  fontWeight: "400",
+  color: "rgb(17, 34, 51)",
+  backgroundColor: "rgb(255, 0, 0)",
+  width: "120",
+  height: "40",
+  padding: "8",
+  gap: "4",
+  borderRadius: "6",
+  display: "block",
+};
+function fields(overrides: Partial<Record<Field, Partial<FieldState>>> = {}) {
+  return Object.fromEntries(
+    FIELDS.map((field) => [field, { editable: true, value: null, ...overrides[field] }]),
+  ) as Record<Field, FieldState>;
+}
+function setup(props: Partial<TweakPanelProps> = {}) {
+  const onTweak = vi.fn();
+  render(
+    <TweakPanel
+      fields={fields()}
+      computed={COMPUTED}
+      used={[]}
+      onTweak={onTweak}
+      {...props}
+    />,
+  );
+  return { onTweak };
+}
+// The unit is never shown, so a number field's name is just its label.
+const number = (name: string) => screen.getByRole("textbox", { name });
+function choose(selector: string, option: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: selector }));
+  fireEvent.click(screen.getByRole("option", { name: option }));
+}
+
+it("renders a real control for every field and nothing from the old toolbar or class names", () => {
+  setup({ fields: fields({ text: { value: "Buy now" }, backgroundColor: { value: "bg-red-500" } }) });
+  expect(screen.getByRole("textbox", { name: "Text" })).toHaveValue("Buy now");
+  expect(screen.getByRole("combobox", { name: "Font" })).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Weight" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Text colour" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Background colour" })).toBeInTheDocument();
+  for (const name of ["Size", "Width", "Height", "Padding", "Corner radius"]) expect(number(name)).toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "Gap" })).toBeNull(); // display:block hides gap
+  for (const name of ["Pick", "Undo", "Redo"]) expect(screen.queryByRole("button", { name })).toBeNull();
+  expect(screen.queryByText(/bg-red-500/)).toBeNull();
+  expect(screen.queryByRole("textbox", { name: /bg-red-500/ })).toBeNull();
+  // Task 3: no element-name line above the fields.
+  expect(screen.queryByText("Action")).toBeNull();
+});
+
+it("lays out the four Figma-style sections, each collapsible, in the mock's order", () => {
+  setup();
+  const toggles = screen.getAllByRole("button", { name: / section$/ }).map((button) => button.getAttribute("aria-label"));
+  expect(toggles).toEqual(["Content section", "Typography section", "Layout section", "Appearance section"]);
+  fireEvent.click(screen.getByRole("button", { name: "Layout section" }));
+  expect(screen.queryByRole("textbox", { name: "Padding" })).toBeNull(); // collapsed: hidden from the accessibility tree
+  expect(document.querySelector("input[aria-label=Padding]")).not.toBeNull(); // but still mounted
+});
+
+it("has no per-field labels above the fields, no unit text and numeric keypads for numbers", () => {
+  setup();
+  for (const text of ["Text", "Font", "Size", "Weight", "Text colour", "Background colour", "Width", "Height", "Padding", "Corner radius"]) {
+    expect(screen.queryByText(text)).toBeNull();
+  }
+  expect(document.body.textContent).not.toMatch(/\(px\)/);
+  expect(number("Padding")).toHaveAttribute("inputmode", "numeric");
+  expect(number("Size")).toHaveAttribute("inputmode", "numeric");
+  expect(screen.getByRole("textbox", { name: "Text" })).not.toHaveAttribute("inputmode", "numeric");
+});
+
+it("shows the font name inside the Font row, and the Add to chat button nowhere", () => {
+  setup();
+  expect(screen.getByRole("combobox", { name: "Font" })).toHaveTextContent("SF Mono");
+  expect(screen.queryByText(/Showing:/)).toBeNull();
+  expect(screen.queryByRole("button", { name: /Add to chat/ })).toBeNull();
+  expect(screen.queryByText(/Add to chat/)).toBeNull();
+});
+
+it("never shows a raw class name, even with no rendered values", () => {
+  setup({ computed: null, fields: fields({ backgroundColor: { value: "bg-red-500" }, color: { value: "text-white" } }) });
+  expect(document.body.innerHTML).not.toContain("bg-red-500");
+  expect(document.body.innerHTML).not.toContain("text-white");
+});
+
+it("shows Gap for a flex container", () => {
+  setup({ computed: { ...COMPUTED, display: "flex" } });
+  expect(number("Gap")).toHaveValue("4");
+});
+
+it("shows the real rendered numbers, with an Auto size icon (never the word) when the source states none", () => {
+  setup({ fields: fields({ height: { value: "48" } }) });
+  expect(number("Width")).toHaveValue("120");
+  expect(number("Height")).toHaveValue("40");
+  expect(screen.getAllByTitle("Auto size")).toHaveLength(1);
+  expect(number("Width").closest(".orion-i-field")).toContainElement(screen.getByTitle("Auto size"));
+  expect(screen.queryByText(/auto/i)).toBeNull();
+  // W and H sit inside the fields as letters.
+  expect(number("Width").closest(".orion-i-field")).toHaveTextContent("W");
+  expect(number("Height").closest(".orion-i-field")).toHaveTextContent("H");
+});
+
+it("commits font, weight and colour choices immediately", () => {
+  const { onTweak } = setup();
+  choose("Font", "Serif");
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontFamily", value: "serif" });
+  choose("Weight", "Bold");
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontWeight", value: "700" });
+  fireEvent.click(screen.getByRole("button", { name: "Background colour" }));
+  fireEvent.click(screen.getAllByRole("button", { name: /^#[0-9a-f]{6}$/i })[0]!);
+  expect(onTweak).toHaveBeenLastCalledWith({
+    field: "backgroundColor",
+    value: expect.stringMatching(/^#[0-9a-f]{6}$/i),
+  });
+  expect(onTweak).toHaveBeenCalledTimes(3);
+});
+
+it("commits a number once on Enter or blur, never per keystroke", () => {
+  const { onTweak } = setup();
+  const padding = number("Padding");
+  fireEvent.change(padding, { target: { value: "1" } });
+  fireEvent.change(padding, { target: { value: "16" } });
+  expect(onTweak).not.toHaveBeenCalled();
+  fireEvent.keyDown(padding, { key: "Enter" });
+  fireEvent.blur(padding);
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "padding", value: "16" });
+});
+
+it("keeps a bad number local and explains it", () => {
+  const { onTweak } = setup();
+  const padding = number("Padding");
+  fireEvent.change(padding, { target: { value: "abc" } });
+  fireEvent.blur(padding);
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  fireEvent.change(padding, { target: { value: "-2" } });
+  fireEvent.blur(padding);
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  expect(onTweak).not.toHaveBeenCalled();
+  // Decimals are not whole numbers: the copy says so, and nothing is applied.
+  fireEvent.change(padding, { target: { value: "2.5" } });
+  fireEvent.blur(padding);
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  expect(onTweak).not.toHaveBeenCalled();
+  fireEvent.change(padding, { target: { value: "3px" } });
+  fireEvent.blur(padding);
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "padding", value: "3" });
+});
+
+it("steps from a fractional rendered value to a whole number", () => {
+  const { onTweak } = setup({ computed: { ...COMPUTED, width: "120.4" } });
+  fireEvent.keyDown(number("Width"), { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "width", value: "121" });
+});
+
+it("keeps the same input, and its focus, through a refresh after each step", () => {
+  const onTweak = vi.fn();
+  const props: TweakPanelProps = {
+    fields: fields({ fontSize: { value: "16" } }), computed: { ...COMPUTED, fontSize: "16" }, used: [], onTweak,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const size = number("Size");
+  size.focus();
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontSize", value: "17" });
+  // The change is applied: the panel is pending, then the element is read again (its label changes too).
+  rerender(<TweakPanel {...props} isPending />);
+  expect(number("Size")).toBe(size);
+  expect(document.activeElement).toBe(size);
+  // A step while pending does nothing (no double apply from a stale value).
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenCalledTimes(1);
+  rerender(<TweakPanel {...props} fields={fields({ fontSize: { value: "17" } })} computed={{ ...COMPUTED, fontSize: "17" }} />);
+  expect(number("Size")).toBe(size);
+  expect(document.activeElement).toBe(size);
+  expect(size).toHaveValue("17");
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontSize", value: "18" });
+  expect(onTweak).toHaveBeenCalledTimes(2);
+});
+
+it("ignores colour and dropdown changes while pending, and dims the body", () => {
+  const { onTweak } = setup({ isPending: true });
+  expect(document.querySelector("[aria-busy=true]")).not.toBeNull();
+  choose("Weight", "Bold");
+  expect(onTweak).not.toHaveBeenCalled();
+});
+
+it("marks the Tweak body pending (dimmed through the theme, busy for assistive tech) only while pending", () => {
+  const { container } = render(<TweakPanel fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} isPending />);
+  const body = container.querySelector(".orion-i-body")!;
+  expect(body).toHaveAttribute("data-pending", "true");
+  expect(body).toHaveAttribute("aria-busy", "true");
+  expect(body).not.toHaveAttribute("style");
+  cleanup();
+  const idle = render(<TweakPanel fields={fields()} computed={COMPUTED} used={[]} onTweak={vi.fn()} />);
+  expect(idle.container.querySelector(".orion-i-body")).not.toHaveAttribute("data-pending");
+  expect(idle.container.querySelector(".orion-i-body")).not.toHaveAttribute("aria-busy");
+});
+
+it("steps a number with the arrow keys and commits each step once", () => {
+  const { onTweak } = setup({ fields: fields({ fontSize: { value: "16" } }), computed: { ...COMPUTED, fontSize: "16" } });
+  const size = number("Size");
+  fireEvent.keyDown(size, { key: "ArrowUp" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "fontSize", value: "17" });
+  expect(size).toHaveValue("17");
+  fireEvent.blur(size);
+  expect(onTweak).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(size, { key: "ArrowDown" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "fontSize", value: "16" });
+});
+
+it("never steps below zero", () => {
+  const { onTweak } = setup({ computed: { ...COMPUTED, padding: "0" } });
+  const padding = number("Padding");
+  fireEvent.keyDown(padding, { key: "ArrowDown" });
+  expect(padding).toHaveValue("0");
+  expect(onTweak).not.toHaveBeenCalled();
+});
+
+it("accepts a pasted px unit", () => {
+  const { onTweak } = setup();
+  const padding = number("Padding");
+  fireEvent.change(padding, { target: { value: "16px" } });
+  fireEvent.keyDown(padding, { key: "Enter" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "padding", value: "16" });
+});
+
+it("resets an edited box to the new real value but leaves untouched siblings alone", () => {
+  const props: TweakPanelProps = {
+    fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  fireEvent.change(number("Padding"), { target: { value: "16" } });
+  fireEvent.keyDown(number("Padding"), { key: "Enter" });
+  fireEvent.change(number("Width"), { target: { value: "999" } }); // typed, not committed
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "16" }} />);
+  expect(number("Padding")).toHaveValue("16");
+  expect(number("Width")).toHaveValue("999");
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "20" }} />);
+  expect(number("Padding")).toHaveValue("20");
+  expect(number("Width")).toHaveValue("999");
+});
+
+it("commits edited text on Enter", () => {
+  const { onTweak } = setup({ fields: fields({ text: { value: "Buy" } }) });
+  const text = screen.getByRole("textbox", { name: "Text" });
+  fireEvent.change(text, { target: { value: "Buy now" } });
+  fireEvent.keyDown(text, { key: "Enter" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "Buy now" });
+});
+
+it("disables code-owned fields once with a note", () => {
+  setup({ fields: fields({ padding: { editable: false }, color: { editable: false } }) });
+  expect(number("Padding")).toHaveAttribute("disabled");
+  expect(screen.getByRole("button", { name: "Text colour" })).toBeDisabled();
+  expect(screen.getAllByText("Set by the screen's code. Change it in Code.")).toHaveLength(2); // Typography + Layout sections
+});
+
+it("disables the dropdowns of code-owned fields too", () => {
+  setup({ fields: fields({ fontFamily: { editable: false }, fontWeight: { editable: false } }) });
+  expect(screen.getByRole("combobox", { name: "Font" })).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Weight" })).toBeDisabled();
+});
+
+it("shows a normalised value after a px commit and keeps following the value (Undo)", () => {
+  const props: TweakPanelProps = {
+    fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  fireEvent.change(number("Padding"), { target: { value: "9px" } });
+  fireEvent.keyDown(number("Padding"), { key: "Enter" });
+  expect(number("Padding")).toHaveValue("9");
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "9" }} />);
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "8" }} />);
+  expect(number("Padding")).toHaveValue("8");
+});
+
+it("drops an invalid number and its error when the element's value changes", () => {
+  const props: TweakPanelProps = {
+    fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  fireEvent.change(number("Padding"), { target: { value: "abc" } });
+  fireEvent.blur(number("Padding"));
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  rerender(<TweakPanel {...props} computed={{ ...COMPUTED, padding: "12" }} />);
+  expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();
+  expect(number("Padding")).toHaveValue("12");
+});
+
+it("does not carry typed text or an error into another element, but keeps the DOM node for the same one", () => {
+  const props: TweakPanelProps = {
+    selectionKey: "a", fields: fields(), computed: COMPUTED, used: [], onTweak: vi.fn(),
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const padding = number("Padding");
+  padding.focus();
+  fireEvent.change(number("Width"), { target: { value: "abc" } });
+  fireEvent.blur(number("Width"));
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  rerender(<TweakPanel {...props} isPending />);
+  fireEvent.change(padding, { target: { value: "77" } }); // typed while pending: ignored on blur, never applied
+  fireEvent.blur(padding);
+  rerender(<TweakPanel {...props} isPending={false} />);
+  expect(number("Padding")).toBe(padding);
+  expect(number("Padding")).toHaveValue("77");
+  rerender(<TweakPanel {...props} selectionKey="b" />);
+  expect(number("Padding")).toHaveValue("8");
+  expect(number("Width")).toHaveValue("120");
+  expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();
+});
+
+it("does not flag an untouched empty number box on blur or Enter, but still flags typed junk", () => {
+  // No plain number to show (value null, nothing computed): the box is empty.
+  const { onTweak } = setup({ computed: { ...COMPUTED, padding: "8px 16px" } });
+  const padding = number("Padding");
+  expect(padding).toHaveValue("");
+  fireEvent.blur(padding);
+  fireEvent.keyDown(padding, { key: "Enter" });
+  expect(screen.queryByText("Use a whole number, like 8.")).toBeNull();
+  expect(onTweak).not.toHaveBeenCalled();
+  fireEvent.change(padding, { target: { value: "abc" } });
+  fireEvent.blur(padding);
+  expect(screen.getByText("Use a whole number, like 8.")).toBeInTheDocument();
+  expect(onTweak).not.toHaveBeenCalled();
+});
+
+it("shows read-only text disabled with its note instead of hiding it", () => {
+  const { onTweak } = setup({ fields: fields({ text: { editable: false, value: "RIDE …" } }) });
+  const text = screen.getByRole("textbox", { name: "Text" });
+  expect(text).toBeDisabled();
+  expect(text).toHaveValue("RIDE …");
+  expect(text.closest("section")).toHaveTextContent("Set by the screen's code. Change it in Code.");
+  fireEvent.blur(text);
+  expect(onTweak).not.toHaveBeenCalled();
+});
+
+it("hides Content only when the element holds no text", () => {
+  setup({ fields: fields({ text: { editable: false, value: null } }) });
+  expect(screen.queryByRole("textbox", { name: "Text" })).toBeNull();
+});
+
+it("never applies an untouched focus and blur on text, even multi-line or with a no-break space", () => {
+  for (const value of ["\n      At VeloX, we believe\n      cycling is more.\n    ", "Fish & Chips\u00a0→ go", "  Our Story  "]) {
+    const { onTweak } = setup({ fields: fields({ text: { value } }) });
+    const text = screen.getByRole("textbox", { name: "Text" });
+    fireEvent.focus(text);
+    fireEvent.blur(text);
+    fireEvent.keyDown(text, { key: "Enter" });
+    expect(onTweak, JSON.stringify(value)).not.toHaveBeenCalled();
+    cleanup();
+  }
+});
+
+it("commits edited mixed-content text once", () => {
+  const { onTweak } = setup({ fields: fields({ text: { value: "FEATURED" } }) });
+  const text = screen.getByRole("textbox", { name: "Text" });
+  fireEvent.change(text, { target: { value: "  NEW  " } });
+  fireEvent.blur(text);
+  fireEvent.blur(text);
+  fireEvent.keyDown(text, { key: "Enter" });
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "NEW" });
+});
+
+
+it("offers one field per text run and commits the selected run only", () => {
+  const { onTweak } = setup({ fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND"] } }) });
+  expect(number("Text")).toHaveValue("RIDE");
+  const second = number("Text 2");
+  expect(second).toHaveValue("BEYOND");
+  fireEvent.change(second, { target: { value: "FURTHER" } });
+  fireEvent.keyDown(second, { key: "Enter" });
+  fireEvent.blur(second);
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "FURTHER", index: 1 });
+});
+
+it("keeps each text run's node, focus and pending state through refresh and undo", () => {
+  const onTweak = vi.fn();
+  const props: TweakPanelProps = {
+    selectionKey: "heading", fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND"] } }),
+    computed: COMPUTED, used: [], onTweak,
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const first = number("Text");
+  const second = number("Text 2");
+  second.focus();
+  fireEvent.change(second, { target: { value: "FURTHER" } });
+  fireEvent.keyDown(second, { key: "Enter" });
+  rerender(<TweakPanel {...props} isPending />);
+  fireEvent.change(first, { target: { value: "GO" } });
+  fireEvent.blur(first);
+  expect(onTweak).toHaveBeenCalledTimes(1);
+  expect(number("Text 2")).toBe(second);
+  expect(document.activeElement).toBe(second);
+  rerender(<TweakPanel {...props} fields={fields({ text: { value: "RIDE", runs: ["RIDE", "FURTHER"] } })} />);
+  expect(second).toHaveValue("FURTHER");
+  expect(number("Text")).toBe(first);
+  expect(first).toHaveValue("GO");
+  rerender(<TweakPanel {...props} />);
+  expect(second).toHaveValue("BEYOND");
+  rerender(<TweakPanel {...props} selectionKey="another-heading" />);
+  expect(first).toHaveValue("RIDE");
+  expect(second).toHaveValue("BEYOND");
+});
+
+it("does not commit an untouched run and sends index zero for the first of several runs", () => {
+  const { onTweak } = setup({ fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND", "LIMITS"] } }) });
+  for (const name of ["Text", "Text 2", "Text 3"]) fireEvent.blur(number(name));
+  expect(onTweak).not.toHaveBeenCalled();
+  fireEvent.change(number("Text"), { target: { value: "CHASE" } });
+  fireEvent.blur(number("Text"));
+  expect(onTweak).toHaveBeenCalledExactlyOnceWith({ field: "text", value: "CHASE", index: 0 });
+});
+
+
+it("keeps a cleared run in place so it can be typed into again", () => {
+  const onTweak = vi.fn();
+  const props: TweakPanelProps = {
+    fields: fields({ text: { value: "RIDE", runs: ["RIDE", "BEYOND"] } }),
+    computed: COMPUTED, used: [], onTweak, selectionKey: "hero",
+  };
+  const { rerender } = render(<TweakPanel {...props} />);
+  const first = number("Text");
+  const second = number("Text 2");
+  fireEvent.change(first, { target: { value: "" } });
+  fireEvent.blur(first);
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "text", value: "", index: 0 });
+  rerender(<TweakPanel {...props} fields={fields({ text: { value: "", runs: ["", "BEYOND"] } })} />);
+  expect(number("Text")).toBe(first);
+  expect(first).toBeEnabled();
+  expect(number("Text 2")).toBe(second);
+  expect(second).toHaveValue("BEYOND");
+  fireEvent.change(first, { target: { value: "CHASE" } });
+  fireEvent.keyDown(first, { key: "Enter" });
+  expect(onTweak).toHaveBeenLastCalledWith({ field: "text", value: "CHASE", index: 0 });
+});

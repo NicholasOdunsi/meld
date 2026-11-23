@@ -10,11 +10,13 @@ public struct StreamScreen: Identifiable, Equatable, Sendable {
     public let formFactor: String
     public let createdAt: Date
     public let updating: Bool
+    /// The Star whose reply asked for this screen, when known.
+    public let starID: String?
 
     public init(id: String, name: String, state: State, versionID: String?, formFactor: String,
-                createdAt: Date, updating: Bool) {
+                createdAt: Date, updating: Bool, starID: String? = nil) {
         self.id = id; self.name = name; self.state = state; self.versionID = versionID
-        self.formFactor = formFactor; self.createdAt = createdAt; self.updating = updating
+        self.formFactor = formFactor; self.createdAt = createdAt; self.updating = updating; self.starID = starID
     }
 
     public var cacheKey: String? { versionID.map { "\(id)-\($0)" } }

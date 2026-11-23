@@ -66,7 +66,7 @@ struct ProjectScreen: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(OrionSpacing.md)
                     }
-                    WebViewHost(webView: webView)
+                    WebViewHost(webView: webView, allowsSwipeNavigation: false)
                         .frame(maxHeight: .infinity)
                 }
                     .frame(width: showsWeb ? split.panelWidth : 0)
@@ -473,6 +473,11 @@ struct ProjectScreen: View {
                                          Task { await frame.setMessageStars(message.id, star: target, mode: mode) }
                                      }, openStar: { frame.openStar($0) }, avatarGap: OrionSpacing.xs)
                         .id(message.id)
+                }
+                ForEach(stream.screens(forStar: star.id)) { screen in
+                    ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
+                        .padding(.leading, 28 + OrionSpacing.xs)
+                        .id("screen:\(screen.id)")
                 }
                 if let activity = stream.activity(forStar: star.id) {
                     ActivityLine(activity: activity) { Task { await frame.retryDesignProposal(activity.taskID) } }.id("activity")

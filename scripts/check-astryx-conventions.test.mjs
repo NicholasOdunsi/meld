@@ -181,3 +181,25 @@ test("CLI requires at least one source root", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Usage:/);
 });
+
+test("skips the owner-approved inspector theme file, and only that file", () => {
+  const root = makeTemporaryRoot();
+  const css = "export const CSS = `\n.pill { background: #262626; width: 34px; }\n`;";
+  writeFixture(root, "features/canvas-excalidraw/live/inspector-theme.ts", css);
+  const other = writeFixture(root, "features/canvas-excalidraw/live/other-theme.ts", css);
+  assert.deepEqual(checkTree(root), [
+    `${other}: hardcoded color`,
+    `${other}: hardcoded pixel`,
+  ]);
+});
+
+test("lets the inspector field primitives use raw elements but still holds them to every other rule", () => {
+  const root = makeTemporaryRoot();
+  const rel = "features/canvas-excalidraw/live/inspector-ui.tsx";
+  writeFixture(root, rel, `export const A = () => <div><span style={{ color: "#fff" }} /></div>;`);
+  assert.deepEqual(checkTree(root), [`${join(root, "features/canvas-excalidraw/live")}/inspector-ui.tsx: hardcoded color`]);
+  writeFixture(root, rel, `export const A = () => <div><span /></div>;`);
+  assert.deepEqual(checkTree(root), []);
+  writeFixture(root, "features/canvas-excalidraw/live/other.tsx", `export const A = () => <div />;`);
+  assert.equal(checkTree(root).length, 1);
+});
