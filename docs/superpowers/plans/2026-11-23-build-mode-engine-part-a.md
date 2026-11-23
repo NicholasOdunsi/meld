@@ -16,7 +16,7 @@ Spec: `docs/superpowers/specs/2026-11-23-build-mode-engine-design.md`.
 - Use the engine **unchanged**. No patches and no forks. Only `EngineClient` (Plan B) may import T3 types.
 - Engine environment: `T3CODE_HOME=<connector root>/engine/home`, `T3CODE_TELEMETRY_ENABLED=false`, `T3CODE_OTEL_SDK_DISABLED=true`. It listens on localhost only: no LAN and no T3 Connect. It never self-updates.
 - Engine version and npm integrity are **pinned** in `apps/connector/src/providers/release-manifest.ts`, using the values recorded by Task 1.
-- The engine needs Node `^22.16 || ^23.11 || >=24.10`.
+- The engine brings its own Node 26 runtime. Orion's managed Node stays at 24.8.0 and only runs the launcher (Task 1 finding).
 - The connector's content-only path (`security/task-workspace.ts`, the content adapters) must not change.
 - New GitHub repos are created **private**.
 - The local folder path for a `folder` code link is stored on the Mac only, never online.
@@ -826,6 +826,13 @@ git commit -m "Install the pinned build engine into Orion's private folder"
 
 ---
 
+**Amendments from the Task 1 spike (these override the text above where they differ):**
+- Engine pin is `t3` `0.1.11`, integrity `sha512-LwGw1MBUrKJfqjTl/75QpAPbD3TBoyyPA8NgNrQh0yb0cQHGzoOBYuHcZa17rRcbLAULGCf9Bn/9ntEYUmxlLw==`.
+- **Node:** keep the managed Node at 24.8.0. Don't change `RELEASES.node`. The npm package is only a launcher (it works on Node ≥20.11). On first run it downloads a bundled Node 26.13.1 engine binary (~400 MB) into `$T3CODE_HOME/runtime/versions/0.1.11/`, checked against the release's `SHA256SUMS`.
+- **Every `t3` call, `--version` included, must set `T3CODE_HOME=paths.engineHome`.** Without it the launcher downloads into `~/.t3`. In `verifyVersion`, the env must be `{ HOME: paths.engineHome, T3CODE_HOME: paths.engineHome, T3CODE_TELEMETRY_ENABLED: "false", T3CODE_OTEL_SDK_DISABLED: "true", PATH: … }`. Add a test asserting the `--version` call's env has `T3CODE_HOME === paths.engineHome`. The first `install()` therefore also downloads the engine runtime; that's expected.
+- Run the launcher with the managed Node explicitly. Invoke `paths.runtimeNode` with args `[<versionDir>/node_modules/t3/bin/t3.mjs, "--version"]` instead of the `.bin/t3` shim, so a `#!/usr/bin/env node` shebang never picks up another Node. Do the same in Task 6. Set `ConnectorPaths.engineExecutable` to `<engineCurrent>/node_modules/t3/bin/t3.mjs` (the launcher script, run with `paths.runtimeNode`). If the launcher's real path inside the package differs, use the real path and say so in the report.
+- **Provider pins (same file, same task):** the engine marks Claude 2.1.220 as `limited` (wants ≥2.1.301) and Codex 0.146.0 as `broken` (wants ≥0.159.0). Bump `RELEASES.providers.claude` and `RELEASES.providers.codex` to the newest stable versions that meet those floors. Get the version and integrity from `npm view @anthropic-ai/claude-code@<v> version dist.integrity` and `npm view @openai/codex@<v> version dist.integrity`. Keep the model lists unless the release notes say a model was removed. Update any tests that hard-code the old versions. Then run `bash scripts/provider-adapters/smoke-test.sh --self-test` and the connector suite. Expected: PASS. If a bump breaks the content-only adapters, stop and report BLOCKED with the failure.
+
 ### Task 6: EngineProcess — start, health, session, stop
 
 **Files:**
@@ -1080,6 +1087,17 @@ git commit -m "Run the build engine headless with a fresh local session"
 ```
 
 ---
+
+**Amendments from the Task 1 spike (exact values; these replace the `/* spike.md … */` markers):**
+- The launcher is started as `paths.runtimeNode` with `[paths.engineExecutable, ...]` (see the Task 5 amendments).
+- `START_ARGS(port) = ["serve", "--host", "127.0.0.1", "--port", String(port), "--no-browser"]`. Make it a function of the port, and keep `T3CODE_PORT` in the env too.
+- `SESSION_ARGS = ["auth", "session", "issue", "--scope", "orchestration:read", "--scope", "orchestration:operate", "--scope", "source-control:write", "--ttl", "1d", "--label", "orion-connector", "--subject", "orion-connector", "--json"]`. Output JSON field `token`. Never log it.
+- `HEALTH_PATH = "/.well-known/t3/environment"` (200, no auth). The JSON body must also have `serverVersion === RELEASES.engine.version` and `orchestrationProtocolVersion === 2`. Otherwise treat it as unhealthy and fail start with "The build engine reports an unexpected version." Add a test for the mismatch.
+- **Provider wiring:** before spawning, write `<engineHome>/userdata/settings.json` (create `userdata/`, mode 0600) with exactly:
+  `{"providerInstances":{"claudeAgent":{"driver":"claudeAgent","config":{"binaryPath":"<paths.providerCurrent('claude')>/node_modules/.bin/claude","homePath":"<paths.providerHome('claude')>"}},"codex":{"driver":"codex","config":{"binaryPath":"<paths.providerCurrent('codex')>/node_modules/.bin/codex","homePath":"<paths.providerHome('codex')>"}}}}`.
+  If the file already exists, merge into its `providerInstances` key and leave other keys alone. The engine also writes settings there. Export it as `writeEngineProviderSettings(paths, fileSystem)` and unit-test the merge. No extra env vars are needed for provider wiring.
+- **Engine stdout is secret:** `t3 serve` prints a one-time pairing token and QR code on stdout. In `nodeEngineSpawner`, use `stdio: ["ignore", "ignore", "pipe"]`. Append stderr to `<engineRoot>/logs/engine.log` only after passing each chunk through `redactDiagnostic`.
+- SIGTERM to the launcher PID stops the engine; the launcher forwards it. Shutdown took under 1 s in the spike.
 
 ## After Plan A
 
