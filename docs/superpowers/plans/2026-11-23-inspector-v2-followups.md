@@ -92,6 +92,47 @@ Also fix the native tooltip in the owner's third screenshot: hovering a live scr
 
 ---
 
+### Task 5: Text with other things inside it is editable (one text run)
+
+**Files:** `packages/screen-runtime/src/edit/html.ts`, `edit/jsx.ts`, `edit/patch.ts` (+ a small `runs()` helper), `edit/types.ts` only if needed, their tests (`edit/html.test.ts`, `edit/jsx.test.ts`, …); `apps/web/src/features/canvas-excalidraw/live/inspector-values.ts`, `live/tweak-panel.tsx`, `live/element-tag.ts` tests, their tests; e2e.
+
+Owner: "i noticed a lot of text content are not editable" (screenshots: picked `READY TO <span>RIDE?</span>`, `CHASE THE<br><span>FREEDOM.</span>`, `FEATURED <span class="accent">BIKES.</span>` in a pasted HTML bike-shop page). Diagnosis (reproduced with the real engine and a rendered `TweakPanel`, in `.context/diag-out.txt` and `remap-out.txt`):
+- Pasted HTML stays one `index.html`; `compile.ts:135` stamps `data-orion-src="file:start:end"`; a click picks the innermost tagged element, so bare text nodes can never be picked; `inspect`/`tweak` (`edit/index.ts:36-68`) re-parse and match by exact offsets.
+- Text is editable ONLY when the element has exactly ONE child and it is a text node (`html.ts:131-148`; JSX `jsx.ts:38-68`, which also accepts one `{"literal"}`). Any text + `<br>` / `<span>` / `<svg>` / comment mix has no Text field, so headings like the three above, the hero h1, `VELO<span>X</span>` logos, nav/footer logos, and `<a>Explore <svg/></a>` buttons have NO Text field at all.
+- The panel silently HIDES the Content section when `!text.editable && value===null` (`inspector-values.ts:118`, `tweak-panel.tsx:158`); the "Set by the screen's code. Change it in Code." note for text (`tweak-panel.tsx:161`) is dead code because `descriptor` (`patch.ts:19-31`) only sets `value` from a binding. No explanation is given.
+- Typography/layout fields stay editable on all of these.
+- Bug A: clearing text to "" in HTML gives `<p></p>`, which then has zero children, so the Text field vanishes (user stuck until Undo).
+- Bug B: focusing then blurring the Text box on multi-line text writes an edit (and re-indents the source) because `LiteralField.commit` (`tweak-panel.tsx:64-76`) compares the trimmed text with the untrimmed `submitted` value; seen on `p.hero-description` and `a.btn`. Each such blur adds a history entry.
+
+**Required behaviour:**
+- **Single-run rule.** An element is text-editable when it has exactly ONE non-blank direct text run, whatever other children it has (elements, `<br>`, comments, whitespace-only text). `Text` shows that run (whitespace-collapsed and trimmed for display); the patch rewrites ONLY that run's source range and keeps the run's original leading/trailing whitespace (so `FEATURED ` + `<span>` never becomes `NEW<span>`); other children are untouched. HTML writes `htmlText(trimmed)` (escapes `& < >`); JSX writes `{JSON.stringify(v)}` computed from the run's semantic text (Babel literal-child cleaning: trim around newlines, join lines with a space, keep meaningful edge spaces). Skip `<pre>` and elements with `white-space:pre*`. Raw-text tags stay excluded.
+- **Read-only reason, not silence.** When text is NOT editable (more than one non-blank run, `{expression}`/template children, etc.) the Content section stays visible with the Text field DISABLED showing the element's static text (with `…` if multiple runs; first run is fine) and the existing note "Set by the screen's code. Change it in Code." (alive again): make `Binding.make` nullable and derive editable from it in `patch.ts`; only hide Content when the element has no text at all and no children that could have text.
+- **Empty elements:** an element with no children but also no `{expression}` (e.g. `<p></p>` after clearing) stays editable: typing inserts the text between the open/close tags (fixes Bug A).
+- **Bug B:** compare normalised values, so an untouched focus+blur does not call `onTweak` and does not add a history entry.
+- **Multiple runs are Task 6** (do not build it here); they get the read-only reason for now.
+- Undo/redo: no change to history machinery. A run edit stays inside the element, so `shiftTag`/`remapTag` in `hand-edit-panel.tsx` / `element-tag.ts` must stay correct: add tests for replace/grow/empty/no-op run edits and undo, and a picked span AFTER a sibling-run edit shifting correctly.
+- Frame message limits stay (bounded strings); keep every existing protection. The picked element keeps its `data-orion-src` identity after the edit (existing reselect rules).
+
+- [ ] **Step 1: Failing tests:** engine (`html.test.ts`, `jsx.test.ts`): text+`<span>`, text+`<br>`+`<span>`, `<a>Explore <svg/></a>`, `<button><svg/> Go</button>`, `<li>Two <b>x</b></li>`, comments/whitespace, entities (`&amp; &nbsp; &rarr;` shown decoded, written as literal characters), text with `{`/`<`/`&`, multi-line text normalisation, two non-blank runs → read-only with a reason and value, JSX `{name}`/template child → read-only, `<pre>` excluded, empty element insert, tweak range stays inside the element. Panel (`inspector-values.test.ts`, `tweak-panel.test.tsx`): read-only text is shown disabled with the note (not hidden); untouched focus+blur on multi-line text never calls `onTweak`; editable mixed-content text commits once. Remap (`element-tag.test.ts`): run edits + undo + picked span after the edited run. e2e (`canvas-excalidraw-live.spec.ts`, paste an HTML page with `<h2>FEATURED <span class="accent">BIKES.</span></h2>`): pick the h2, Content Text shows `FEATURED`, change it to `NEW`, the screen shows `NEW BIKES.` with the span's style intact, Undo restores, the span can still be picked and edited separately.
+- [ ] **Step 2: FAIL. Step 3: Implement. Step 4: PASS** (screen-runtime package tests, the canvas folder, typecheck, eslint, check:astryx, the live spec alone). Screenshot the panel for the three owner headings under `.context/fu-text-*.png` and read them.
+- [ ] **Step 5: Commit** `feat(canvas): text next to other elements is editable; read-only text says why`.
+
+---
+
+### Task 6: Several text runs in one element (hero headings)
+
+**Files:** `packages/screen-runtime/src/edit/types.ts`, `edit/index.ts`, `edit/patch.ts`, `edit/html.ts`, `edit/jsx.ts`, `packages/screen-runtime/src/**/screen-compiler`-side zod schemas (`apps/web/.../live/screen-compiler.ts:19-21` strict zod), `live/inspector-values.ts`, `live/tweak-panel.tsx`, `live/hand-edit-panel.tsx`, `live/hand-editing.ts` (+ tests), e2e.
+
+An element like the hero `<h1>RIDE<br>BEYOND<br><span class="accent">LIMITS.</span></h1>` (and `CHASE THE<br>FREEDOM.` when both lines are plain text) has several non-blank text runs separated by `<br>` or elements. After Task 5 these are read-only with a reason; make each run editable.
+
+**Required behaviour:** the engine reports the element's text runs (`runs: string[]`, bounded: at most 8 runs, each at most the existing text limit; more → read-only with the reason) and the tweak message carries `index` (integer 0-7) selecting the run; the patch rewrites only that run's source range. The Content section shows ONE Text field per run in order, each with the same look as the Text field, accessible names `Text`, `Text 2`, `Text 3` (the first stays `Text` so existing tests/e2e keep working), keyed by run index so focus/pending/carry rules behave as for single fields; an element with one run still shows exactly one `Text` field. Extend the strict frame/compile message schemas with the new fields in the same validated style (strict shape, bounds, integer index; reject extras), add the new fields to the `FieldState`/`Tweak` types, and keep backwards compatibility for messages without `runs`/`index`. Undo/redo and `remapTag` as in Task 5 (a run edit changes only that run's range; later runs' ranges shift by the delta — the element's end shifts; tests for editing run 1 then undoing, then editing run 2, picked child span after edits).
+
+- [ ] **Step 1: Failing tests:** engine: runs for `RIDE<br>BEYOND<br><span>LIMITS.</span>` (two runs: RIDE, BEYOND) and `CHASE THE<br><span>FREEDOM.</span>` (one run), tweak with `index` rewrites only that run, out-of-range index rejected, >8 runs read-only; schema accepts/rejects (extra fields, non-integer index, oversize runs); panel: N fields for N runs, names `Text`, `Text 2`, editing the second commits `index: 1`, single-run elements unchanged; remap tests; e2e: paste the hero h1 HTML, pick it, two Text fields; change the second to `FURTHER`, the screen updates, the span is untouched, Undo restores.
+- [ ] **Step 2: FAIL. Step 3: Implement. Step 4: PASS** (screen-runtime tests, the canvas folder, typecheck, eslint, check:astryx, the live spec alone, the screen-runtime bundle checks). Screenshot under `.context/fu-runs-*.png` and read it.
+- [ ] **Step 5: Commit** `feat(canvas): every text run in a heading is editable`.
+
+---
+
 ## Final verification (controller)
 
 Whole-plan review, then `pnpm typecheck`, lint, `check:astryx`, `test:colocation`, `test:workspace`, `pnpm test`, and each canvas e2e spec file alone with a hard timeout; relaunch nothing on port 3107 (the dev server there is live; just ⌘R in the Mac app).
