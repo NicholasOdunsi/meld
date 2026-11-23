@@ -10,8 +10,11 @@ final class ScreenCardStore {
     static let shared = ScreenCardStore(
         directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(Bundle.main.bundleIdentifier ?? "Orion")
-            .appendingPathComponent("ScreenCards"),
-        renderer: { html, size in await ScreenSnapshotter.render(html: html, size: size) }
+            // v2: desktop pictures now show the whole page, so older cached pictures are not reused.
+            .appendingPathComponent("ScreenCards-v2"),
+        renderer: { html, size in
+            await ScreenSnapshotter.render(html: html, size: size, growsTo: size.width > 1000 ? 1600 : nil)
+        }
     )
 
     private(set) var images: [String: NSImage] = [:]

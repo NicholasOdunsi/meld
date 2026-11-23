@@ -7,8 +7,8 @@ struct ScreenCard: View {
     let store: ScreenCardStore
     let open: (StreamScreen) -> Void
 
-    private var width: CGFloat { screen.formFactor == "mobile" ? 200 : 340 }
-    private var height: CGFloat { width * screen.pixelSize.height / screen.pixelSize.width }
+    /// The widest the card gets; in a narrower column it shrinks, keeping the screen's shape.
+    private var maxWidth: CGFloat { screen.formFactor == "mobile" ? 200 : 340 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: OrionSpacing.xs) {
@@ -21,6 +21,12 @@ struct ScreenCard: View {
                 if screen.updating { Text("Updating…").font(.caption2).foregroundStyle(.secondary) }
             }
         }
+    }
+
+    /// The shape of the picture itself, which can be taller than the screen's window.
+    private var pictureSize: CGSize {
+        if screen.state == .built, let size = store.image(for: screen)?.size, size.width > 0, size.height > 0 { return size }
+        return screen.pixelSize
     }
 
     @ViewBuilder private var picture: some View {
@@ -37,7 +43,8 @@ struct ScreenCard: View {
             case .failed: placeholder("Couldn't build this screen")
             }
         }
-        .frame(width: width, height: height)
+        .aspectRatio(pictureSize, contentMode: .fit)
+        .frame(maxWidth: maxWidth)
         .clipShape(shape)
         .overlay(shape.strokeBorder(.white.opacity(0.12)))
     }

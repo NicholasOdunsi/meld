@@ -474,6 +474,11 @@ struct ProjectScreen: View {
                                      }, openStar: { frame.openStar($0) }, avatarGap: OrionSpacing.xs)
                         .id(message.id)
                 }
+                ForEach(stream.screens(forStar: star.id)) { screen in
+                    ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }
+                        .padding(.leading, 28 + OrionSpacing.xs)
+                        .id("screen:\(screen.id)")
+                }
                 if let activity = stream.activity(forStar: star.id) {
                     ActivityLine(activity: activity) { Task { await frame.retryDesignProposal(activity.taskID) } }.id("activity")
                 }

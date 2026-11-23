@@ -3,7 +3,8 @@ import WebKit
 
 @MainActor
 enum ScreenSnapshotter {
-    static func render(html: String, size: CGSize) async -> NSImage? {
+    /// `growsTo` lets a page taller than `size` be captured whole, up to that height.
+    static func render(html: String, size: CGSize, growsTo maxHeight: CGFloat? = nil) async -> NSImage? {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         let view = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
@@ -21,6 +22,14 @@ enum ScreenSnapshotter {
         guard await waiter.finished(timeout: .seconds(10)) else { return nil }
         // Let fonts and layout settle after the load event before the picture is taken.
         try? await Task.sleep(for: .milliseconds(300))
+        var size = size
+        if let maxHeight, maxHeight > size.height,
+           let measured = try? await view.evaluateJavaScript("document.documentElement.scrollHeight") as? Double {
+            size.height = min(max(size.height, CGFloat(measured)), maxHeight)
+            window.setContentSize(size)
+            view.frame = CGRect(origin: .zero, size: size)
+            try? await Task.sleep(for: .milliseconds(200))
+        }
         let snapshot = WKSnapshotConfiguration()
         snapshot.rect = CGRect(origin: .zero, size: size)
         return try? await view.takeSnapshot(configuration: snapshot)
