@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// Match the dedicated canvas suite even when collected by the general CI config.
+test.use({ viewport: { width: 1440, height: 1000 } });
+
 const route = "/dev/canvas-excalidraw";
 
 test("Excalidraw's own UI is hidden and Orion's dock drives the tools", async ({ page }) => {

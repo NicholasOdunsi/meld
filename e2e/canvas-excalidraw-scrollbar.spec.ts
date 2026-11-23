@@ -3,6 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // Headless Chromium hides scrollbars (--hide-scrollbars); the owner sees the classic ones, so show them.
 // This is its own spec because launch options cannot change inside a describe of another file.
 test.use({
+  viewport: { width: 1440, height: 1000 },
   permissions: ["clipboard-read", "clipboard-write"],
   launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] },
 });

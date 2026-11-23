@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
-test.use({ permissions: ["clipboard-read", "clipboard-write"] });
+// Canvas acceptance uses the same viewport in the general CI and dedicated canvas suites.
+test.use({ viewport: { width: 1440, height: 1000 }, permissions: ["clipboard-read", "clipboard-write"] });
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== testInfo.expectedStatus)
     await page
