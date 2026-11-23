@@ -36,6 +36,19 @@ describe("parseLiveFrameMessage", () => {
     ]) expect(from(bad)).toBeNull();
     expect(from(zoom, {})).toBeNull();
   });
+  it("accepts history with only undo or redo and nothing else", () => {
+    for (const direction of ["undo", "redo"]) {
+      const history = { source: "orion-frame", type: "history", direction };
+      expect(from(history)).toEqual(history);
+      expect(from(history, {})).toBeNull();
+      expect(from({ ...history, extra: 1 })).toBeNull();
+      expect(from({ ...history, steps: 50 })).toBeNull();
+    }
+    for (const direction of ["Undo", "redo ", "", "back", 1, null, undefined, ["undo"]]) {
+      expect(from({ source: "orion-frame", type: "history", direction })).toBeNull();
+    }
+    expect(from({ source: "orion-frame", type: "history" })).toBeNull();
+  });
   const computed = { fontFamily: "Inter", fontSize: "16px", fontWeight: "400", color: "rgb(0, 0, 0)", backgroundColor: "rgb(255, 255, 255)", width: "100px", height: "40px", padding: "8px", gap: "4px", borderRadius: "6px", display: "flex" };
   const picked = { source: "orion-frame", type: "picked", epoch: 1, src: "a.tsx:0:10", label: "Hi" };
 

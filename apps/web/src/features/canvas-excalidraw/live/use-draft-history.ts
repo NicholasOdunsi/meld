@@ -6,8 +6,10 @@ import type { createHandEditing } from "./hand-editing";
 
 type HandEditing = ReturnType<typeof createHandEditing>;
 
-// Undo and redo for the awake screen's draft, with no panel mounted: the pill uses
-// this. (The panel's own undo/redo keys live in the panel; with no panel, the board's undo takes the keys.) null when no editable, drafted screen is awake.
+// Undo and redo for the awake screen's draft, with no panel mounted: the pill and the board's
+// Cmd+Z / Shift+Cmd+Z (pressed on the board, the pill or inside the screen; see history-keys.ts) use
+// this. The panel keeps its own keys while focus is in it. With nothing to undo or redo here, the keys
+// go on to the board's own undo. null when no editable, drafted screen is awake.
 export function useDraftHistory(editing: HandEditing): { canUndo: boolean; canRedo: boolean; undo(): void; redo(): void } | null {
   const live = editing.live;
   const liveState = useSyncExternalStore(live.subscribe, live.getState, live.getState);

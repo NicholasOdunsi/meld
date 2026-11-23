@@ -1050,3 +1050,151 @@ test("Escape order: a popup first, then the selection, then Edit, then the scree
   await page.keyboard.press("Escape");
   await expect(live).toHaveCount(0);
 });
+
+// ---- Cmd+Z / Shift+Cmd+Z for screen edits ----
+
+// A rectangle drawn on the board far from the screen, recorded in the board's own undo history.
+async function drawRectangle(page: Page) {
+  await page.evaluate(() => {
+    const board = window.__orionBoard!;
+    const [rectangle] = board.convert([{ type: "rectangle", id: "keys-box", x: -3000, y: -3000, width: 120, height: 80 }]);
+    board.api.updateScene({ elements: [...board.api.getSceneElementsIncludingDeleted(), rectangle], captureUpdate: "IMMEDIATELY" as never });
+  });
+  await expect.poll(() => rectangles(page)).toBe(1);
+}
+const rectangles = (page: Page) =>
+  page.evaluate(() => window.__orionBoard!.api.getSceneElements().filter((element) => element.type === "rectangle").length);
+
+// Keyboard focus on the board itself (Excalidraw's own container), where its undo listens.
+async function focusBoard(page: Page) {
+  await page.locator(".excalidraw-container").focus();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.classList.contains("excalidraw-container"))).toBe(true);
+}
+
+test("Cmd+Z and Shift+Cmd+Z on the board undo and redo the screen's edit, keep the selection and leave the board's undo alone", async ({ page, baseURL }) => {
+  const { app, button, panel } = await openRedButton(page, baseURL!);
+  await drawRectangle(page);
+  await selectRedButton(page, button, panel);
+  const original = await computed(button, "font-weight");
+  expect(original).not.toBe("700");
+  await choose(panel, page, "Weight", "Bold");
+  await expect.poll(() => computed(button, "font-weight")).toBe("700");
+
+  // Panel open, focus on the board.
+  await focusBoard(page);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe(original);
+  await expect(panel).toBeVisible();
+  await expectOutlineOn(app, button);
+  await expect(panel.getByRole("textbox", { name: "Padding", exact: true })).toHaveValue("12");
+  expect(await rectangles(page)).toBe(1);
+  await expect(pillButton(page, "Redo")).toBeEnabled();
+  await focusBoard(page);
+  await page.keyboard.press("Shift+Meta+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe("700");
+  await expect(panel).toBeVisible();
+  await expectOutlineOn(app, button);
+  expect(await rectangles(page)).toBe(1);
+
+  // Ctrl works too (off the Mac), with Ctrl+Y as redo.
+  await focusBoard(page);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe(original);
+  await focusBoard(page);
+  await page.keyboard.press("Control+y");
+  await expect.poll(() => computed(button, "font-weight")).toBe("700");
+  expect(await rectangles(page)).toBe(1);
+
+  // Panel closed: Escape clears the selection, then the keys still undo the screen, not the board.
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await focusBoard(page);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe(original);
+  await expect(panel).toHaveCount(0);
+  expect(await rectangles(page)).toBe(1);
+});
+
+test("with nothing to undo on the screen, Cmd+Z still undoes the board", async ({ page, baseURL }) => {
+  await openRedButton(page, baseURL!);
+  await expect(pillButton(page, "Undo")).toBeDisabled();
+  await drawRectangle(page);
+  await focusBoard(page);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => rectangles(page)).toBe(0);
+  await expect(page.locator("iframe[data-orion-live]")).toHaveCount(1);
+});
+
+test("Cmd+Z and Shift+Cmd+Z pressed inside the screen undo and redo its edit; a screen cannot undo on its own", async ({ page, baseURL }) => {
+  const { live, button, panel } = await openRedButton(page, baseURL!);
+  await selectRedButton(page, button, panel);
+  const original = await computed(button, "font-weight");
+  await choose(panel, page, "Weight", "Bold");
+  await expect.poll(() => computed(button, "font-weight")).toBe("700");
+  const focusedInScreen = () => page.evaluate(() => document.activeElement?.hasAttribute("data-orion-live") ?? false);
+
+  // A pick never takes keyboard focus (the screen ignores the press while picking), so leave Edit
+  // and click into the screen: keyboard focus is now inside it, and the frame forwards the keys.
+  await toggleEdit(page, false);
+  await expect(panel).toHaveCount(0);
+  await button.click();
+  await expect.poll(focusedInScreen).toBe(true);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe(original);
+  // The board takes at most one step from a screen per FRAME_HISTORY_MIN_INTERVAL_MS (100 ms); a person's presses are further apart.
+  await page.waitForTimeout(150);
+  await button.click();
+  await expect.poll(focusedInScreen).toBe(true);
+  await page.keyboard.press("Shift+Meta+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe("700");
+
+  // A report while the pointer is elsewhere is dropped (focus may have stayed inside, so the screen is
+  // still trusted): the next real press inside it works.
+  await button.click();
+  await expect.poll(focusedInScreen).toBe(true);
+  const box = (await pillButton(page, "Code").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const frame = await (await live.elementHandle())!.contentFrame();
+  await frame!.evaluate(() => { for (let i = 0; i < 20; i += 1) window.parent.postMessage({ source: "orion-frame", type: "history", direction: "undo" }, "*"); });
+  await page.waitForTimeout(300);
+  expect(await computed(button, "font-weight")).toBe("700");
+  await expect(pillButton(page, "Redo")).toBeDisabled();
+  await button.click();
+  await expect.poll(focusedInScreen).toBe(true);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe(original);
+});
+
+// A screen whose own code posts the undo report in a loop, with no key pressed.
+const undoLoop = `import { useEffect } from "react";
+export default function App() {
+  useEffect(() => {
+    const id = setInterval(() => window.parent.postMessage({ source: "orion-frame", type: "history", direction: "undo" }, "*"), 50);
+    return () => clearInterval(id);
+  }, []);
+  return <button className="bg-red-500 p-3 text-white">Start</button>;
+}`;
+
+test("a screen that posts undo reports in a loop cannot undo the person's edits, even once they click into it", async ({ page, baseURL }) => {
+  await openRoomBoard(page, baseURL!);
+  await pasteCode(page, undoLoop, "Phone");
+  const app = page.frameLocator("iframe[data-orion-live]");
+  const button = app.getByRole("button", { name: "Start", exact: true });
+  const panel = page.getByTestId("live-panel");
+  await expect(button).toBeVisible();
+  await selectRedButton(page, button, panel);
+  const original = await computed(button, "font-weight");
+  await choose(panel, page, "Weight", "Bold");
+  await expect.poll(() => computed(button, "font-weight")).toBe("700");
+  // Focus, pointer and a fresh click inside the screen: its reports still do nothing.
+  await toggleEdit(page, false);
+  await button.click();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.hasAttribute("data-orion-live") ?? false)).toBe(true);
+  await page.waitForTimeout(1000);
+  expect(await computed(button, "font-weight")).toBe("700");
+  await expect(pillButton(page, "Redo")).toBeDisabled();
+  // The person's own undo still works from the board.
+  await focusBoard(page);
+  await page.keyboard.press("Meta+z");
+  await expect.poll(() => computed(button, "font-weight")).toBe(original);
+});

@@ -158,4 +158,14 @@ describe("screenPillItems", () => {
   it("Undo and Redo only appear with history", () => {
     expect(shape(screenPillItems({ edit: { pressed: false, onToggle: vi.fn() }, ...handlers }))).toEqual(["Edit", "|", "Code"]);
   });
+  it("Edit shows a pointer inside a square (pick an element), drawn like the other pill icons", () => {
+    render(<ScreenPill label="Screen actions" testId="selection-pill" bounds={bounds} view={view} items={screenPillItems({ edit: { pressed: false, onToggle: vi.fn() }, history, ...handlers })} />);
+    const svg = (name: string) => screen.getByRole("button", { name }).querySelector("svg")!;
+    expect(svg("Edit")).toHaveClass("lucide-square-mouse-pointer");
+    expect(svg("Edit")).not.toHaveClass("lucide-mouse-pointer-2");
+    for (const name of ["Edit", "Undo", "Code"]) {
+      expect(svg(name)).toHaveAttribute("width", "17");
+      expect(svg(name)).toHaveAttribute("stroke-width", "1.75");
+    }
+  });
 });

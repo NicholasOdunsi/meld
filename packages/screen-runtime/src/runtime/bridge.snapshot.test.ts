@@ -55,6 +55,31 @@ describe("frame bridge snapshots", () => {
     expect(parent.postMessage).toHaveBeenCalledExactlyOnceWith({ source: FRAME_MESSAGE_SOURCE, type: "escape" }, "*");
   });
 
+  it("forwards Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z and Ctrl+Y as a bare history message, unless the screen used the key or a text field has focus", () => {
+    const { parent, handlers } = setup(`<button id="b">Go</button><input id="i"><textarea id="t"></textarea><div contenteditable="true"><span id="c">x</span></div>`);
+    const el = (id: string) => document.getElementById(id);
+    const key = (key: string, mods: Record<string, unknown> = {}, target: unknown = el("b")) =>
+      handlers.keydown({ key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, isComposing: false, keyCode: 0, defaultPrevented: false, target, ...mods });
+    key("z", { metaKey: true });
+    key("Z", { metaKey: true, shiftKey: true });
+    key("z", { ctrlKey: true }, document.body);
+    key("y", { ctrlKey: true });
+    // Not: the screen handled it, a text field, Alt, IME, no modifier, Cmd+Y.
+    key("z", { metaKey: true, defaultPrevented: true });
+    for (const id of ["i", "t", "c"]) key("z", { metaKey: true }, el(id));
+    key("z", { metaKey: true, altKey: true });
+    key("z", { metaKey: true, isComposing: true });
+    key("z", { metaKey: true, keyCode: 229 });
+    key("z");
+    key("y", { metaKey: true });
+    expect(parent.postMessage.mock.calls).toEqual([
+      [{ source: FRAME_MESSAGE_SOURCE, type: "history", direction: "undo" }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "history", direction: "redo" }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "history", direction: "undo" }, "*"],
+      [{ source: FRAME_MESSAGE_SOURCE, type: "history", direction: "redo" }, "*"],
+    ]);
+  });
+
   it("reports a stuck loop as a single stuck message, never also an error", () => {
     const { parent, handlers } = setup("<p>Hi</p>");
     const event = { error: new Error(STUCK_MESSAGE), message: STUCK_MESSAGE, preventDefault: vi.fn() };

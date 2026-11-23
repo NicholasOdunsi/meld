@@ -46,6 +46,8 @@ export type LiveDeps = {
   onEscape?: () => boolean;
   // A pinch (ctrl+wheel or Safari gesture) over the live frame: the board zooms.
   onZoom?: (zoom: FrameZoom) => void;
+  // Cmd+Z / Shift+Cmd+Z pressed inside the live frame (the board checks it looks real before acting).
+  onHistory?: (direction: "undo" | "redo") => void;
   onDraftIssues?: (
     boardId: string,
     revision: number,
@@ -565,6 +567,10 @@ export function createLiveController(deps: LiveDeps): LiveController {
           break;
         case "pinch":
           if (state.phase === "running") deps.onZoom?.({ x: message.x, y: message.y, scale: message.scale });
+          break;
+        // Likewise for the screen's undo and redo keys.
+        case "history":
+          if (state.phase === "running") deps.onHistory?.(message.direction);
           break;
         case "snapshot":
           // Untrusted page text: passed on as-is, never parsed or run here.

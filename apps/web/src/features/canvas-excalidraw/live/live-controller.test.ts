@@ -497,6 +497,35 @@ describe("createLiveController", () => {
     ]);
   });
 
+  it("passes the running live frame's history keys to the host, and nothing from other windows, while loading or asleep", async () => {
+    const onHistory = vi.fn();
+    const { live, attach, send, frame } = setup({ onHistory });
+    send({ type: "history", direction: "undo" });
+    await live.wake("ds-a");
+    attach();
+    // Not yet running.
+    send({ type: "history", direction: "undo" });
+    send({ type: "ready" });
+    send({ type: "history", direction: "undo" });
+    send({ type: "history", direction: "redo" });
+    send({ type: "history", direction: "undo" }, {});
+    send({ type: "history", direction: "sideways" });
+    send({ type: "history", direction: "undo", extra: 1 });
+    expect(onHistory.mock.calls).toEqual([["undo"], ["redo"]]);
+    // A reload: the old attempt's frame no longer counts, and the new one only once ready.
+    live.reload();
+    send({ type: "history", direction: "undo" });
+    const next = { postMessage: vi.fn() };
+    live.attachFrame(next as unknown as Window);
+    send({ type: "history", direction: "undo" }, next);
+    send({ type: "ready" }, next);
+    send({ type: "history", direction: "undo" }, frame);
+    expect(onHistory).toHaveBeenCalledTimes(2);
+    send({ type: "history", direction: "redo" }, next);
+    expect(onHistory).toHaveBeenLastCalledWith("redo");
+    expect(onHistory).toHaveBeenCalledTimes(3);
+  });
+
   it("drops zoom and pinch from a stale attempt: after a reload, until the new frame is ready", async () => {
     const onZoom = vi.fn();
     const { live, attach, send, frame } = setup({ onZoom });

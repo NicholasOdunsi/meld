@@ -122,9 +122,20 @@ export const FRAME_BRIDGE_SOURCE = `(() => {
     if (data.type === 'clear-selection') clearMark();
     if (data.type === 'snapshot') post({ type: 'snapshot', html: window.__orionSnapshot() });
   });
-  // Escape puts the live screen back to sleep, unless the screen used it.
+  // Escape puts the live screen back to sleep, unless the screen used it. Cmd+Z / Shift+Cmd+Z
+  // (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y off the Mac) undo and redo the screen's edits on the board, unless
+  // the screen used the key or a text field in it has focus (its own undo wins there).
   window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !event.defaultPrevented) post({ type: 'escape' });
+    if (event.defaultPrevented) return;
+    if (event.key === 'Escape') { post({ type: 'escape' }); return; }
+    if (event.altKey || event.isComposing || event.keyCode === 229 || !(event.metaKey || event.ctrlKey)) return;
+    const key = String(event.key).toLowerCase();
+    const direction = key === 'z' ? (event.shiftKey ? 'redo' : 'undo')
+      : key === 'y' && event.ctrlKey && !event.metaKey && !event.shiftKey ? 'redo' : null;
+    const target = event.target;
+    if (!direction || (target && (target.isContentEditable
+      || (typeof target.closest === 'function' && target.closest('input,textarea,[contenteditable]:not([contenteditable=false])'))))) return;
+    post({ type: 'history', direction });
   });
   // A pinch over the screen zooms the board, not the page or the screen. Chromium reports a
   // trackpad pinch as ctrl+wheel, Safari as gesture events; both stay inside this frame, so the

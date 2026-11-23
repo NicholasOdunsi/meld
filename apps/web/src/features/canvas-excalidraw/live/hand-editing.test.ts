@@ -184,6 +184,19 @@ it("hands the live frame's zoom and pinch to the board's handler, once one is se
  editing.drafts.get(id)?.dispose();editing.live.dispose();
 });
 
+it("hands the live frame's history keys to the board's handler, once one is set",async()=>{
+ const {editing,send}=await running();
+ send({type:"history",direction:"undo"});
+ const onHistory=vi.fn();
+ editing.setFrameHistory(onHistory);
+ send({type:"history",direction:"undo"});
+ send({type:"history",direction:"redo"});
+ editing.setFrameHistory(null);
+ send({type:"history",direction:"undo"});
+ expect(onHistory.mock.calls).toEqual([["undo"],["redo"]]);
+ editing.drafts.get(id)?.dispose();editing.live.dispose();
+});
+
 it("uses the frame's Escape to clear a valid pick without sleeping, then sleeps on the next",async()=>{
  const {editing,frame,pick,send}=await running();
  pick();

@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { CodeXml, MousePointer2, Redo2, Undo2 } from "lucide-react";
+import { CodeXml, Redo2, SquareMousePointer, Undo2 } from "lucide-react";
 import type { PillItem } from "../chrome/screen-pill";
 
 const ICON_SIZE = 17;
@@ -14,7 +14,7 @@ export function screenPillItems(input: {
 }): PillItem[] {
   const { edit, history } = input;
   const groups: PillItem[][] = [
-    edit ? [{ kind: "button", label: "Edit", icon: icon(MousePointer2), onPress: edit.onToggle, pressed: edit.pressed }] : [],
+    edit ? [{ kind: "button", label: "Edit", icon: icon(SquareMousePointer), onPress: edit.onToggle, pressed: edit.pressed }] : [],
     history ? [
       { kind: "button", label: "Undo", icon: icon(Undo2), onPress: history.onUndo, disabled: !history.canUndo },
       { kind: "button", label: "Redo", icon: icon(Redo2), onPress: history.onRedo, disabled: !history.canRedo },

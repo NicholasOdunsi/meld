@@ -58,6 +58,7 @@ import { liveIssues, liveSourceOf } from "./live/live-state";
 import { INSPECTOR_CLASS, InspectorThemeStyle } from "./live/inspector-theme";
 import { pillSpecs } from "./live/pill-model";
 import { useDraftHistory } from "./live/use-draft-history";
+import { boardHistoryKey, createFrameHistoryGate, userIsActive } from "./live/history-keys";
 import { useInspectorPanel } from "./live/use-inspector-panel";
 import { sleepingDocument } from "./live/placeholder";
 import { loadRuntimeBundle } from "./live/runtime-bundle";
@@ -251,11 +252,42 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
     if (over) pointerOverLive.current = frame;
     else if (pointerOverLive.current === frame) pointerOverLive.current = null;
   }, []);
+  const overLiveFrame = useCallback(() => {
+    const frame = pointerOverLive.current, state = live.getState();
+    return frame?.isConnected && state.phase !== "asleep" && frame.dataset.orionLive === state.screenId ? frame : null;
+  }, [live]);
+  // Cmd+Z / Shift+Cmd+Z run the awake screen's undo and redo, as the pill's buttons do, when it has
+  // something to undo or redo; otherwise the keys reach the board's own undo as before. Captured on
+  // the window so Excalidraw never also undoes a board element.
+  const historyRef = useRef(history);
+  useEffect(() => { historyRef.current = history; }, [history]);
   useEffect(() => {
-    const overLiveFrame = () => {
-      const frame = pointerOverLive.current, state = live.getState();
-      return frame?.isConnected && state.phase !== "asleep" && frame.dataset.orionLive === state.screenId ? frame : null;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const current = historyRef.current;
+      const direction = boardHistoryKey(event, { history: current, scope: ".orion-board" });
+      if (!direction || !current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      current[direction]();
     };
+    window.addEventListener("keydown", onKeyDown, true);
+    // Pressed inside the screen, the keys never reach this page: the frame reports them, and a report
+    // counts only when it looks like a real press there (history-keys.ts).
+    const gate = createFrameHistoryGate();
+    editing.setFrameHistory((direction) => {
+      const state = live.getState(), focused = document.activeElement;
+      if (state.phase === "asleep") return;
+      const frameFocused = focused instanceof HTMLIFrameElement && focused.isConnected && focused.dataset.orionLive === state.screenId;
+      if (!gate({ screenId: state.screenId, pointerOver: !!overLiveFrame(), frameFocused, userActive: userIsActive(navigator) })) return;
+      const current = historyRef.current;
+      if (current && (direction === "undo" ? current.canUndo : current.canRedo)) current[direction]();
+    });
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      editing.setFrameHistory(null);
+    };
+  }, [editing, live, overLiveFrame]);
+  useEffect(() => {
     const batch = createFrameZoomBatch((run) => { requestAnimationFrame(run); }, (step) => {
       const current = apiRef.current, frame = overLiveFrame();
       if (!current || !frame) return;
@@ -269,7 +301,7 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
       editing.setFrameZoom(null);
       batch.cancel();
     };
-  }, [applyZoom, editing, live]);
+  }, [applyZoom, editing, overLiveFrame]);
   useEffect(() => store.subscribe(() => {
     if (api) queueSave(api.getSceneElementsIncludingDeleted());
   }), [api, queueSave, store]);

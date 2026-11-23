@@ -65,7 +65,9 @@ export function createHandEditing(deps: {
     // while the panel is mounted, so it keeps showing its values.
     historyObserver: ((again: string | null) => void) | null = null,
     // The board's zoom, told about a pinch over the live frame.
-    frameZoom: ((zoom: FrameZoom) => void) | null = null;
+    frameZoom: ((zoom: FrameZoom) => void) | null = null,
+    // The board's undo/redo, told about Cmd+Z pressed inside the live frame.
+    frameHistory: ((direction: "undo" | "redo") => void) | null = null;
   const diagnostics = new Map<
     Draft,
     { revision: number; issues: CompileError[] }
@@ -260,6 +262,7 @@ export function createHandEditing(deps: {
       return true;
     },
     onZoom: (zoom) => frameZoom?.(zoom),
+    onHistory: (direction) => frameHistory?.(direction),
     onDraftIssues: (id, revision, issues) => {
       if (issues.length) setReselect(null);
       const draft = drafts.get(id);
@@ -350,6 +353,8 @@ export function createHandEditing(deps: {
     setEscapeFirst(handler: (() => boolean) | null) { escapeFirst = handler; },
     // The board's handler for a pinch (ctrl+wheel or Safari gesture) over the live frame.
     setFrameZoom(handler: ((zoom: FrameZoom) => void) | null) { frameZoom = handler; },
+    // The board's handler for Cmd+Z / Shift+Cmd+Z pressed inside the live frame.
+    setFrameHistory(handler: ((direction: "undo" | "redo") => void) | null) { frameHistory = handler; },
     // The element to select again, once. Until its pick arrives the panel stays
     // up, so an edit never makes it blink away and back.
     takeReselect() {

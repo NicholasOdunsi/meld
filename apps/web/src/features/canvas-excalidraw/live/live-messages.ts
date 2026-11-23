@@ -28,6 +28,8 @@ const LiveFrameMessageSchema = z.discriminatedUnion("type", [
   z.object({ source, type: z.literal("snapshot"), html: z.string().max(MAX_SCREEN_HTML_CHARS) }).strict(),
   z.object({ source, type: z.literal("zoom"), x: coord, y: coord, deltaY: z.number().min(-1000).max(1000) }).strict(),
   z.object({ source, type: z.literal("pinch"), x: coord, y: coord, scale: z.number().min(0.5).max(2) }).strict(),
+  // Cmd+Z / Shift+Cmd+Z pressed inside the screen. Only the direction: the board decides whether it counts.
+  z.object({ source, type: z.literal("history"), direction: z.enum(["undo", "redo"]) }).strict(),
 ]);
 
 export type LiveFrameMessage = z.infer<typeof LiveFrameMessageSchema>;
