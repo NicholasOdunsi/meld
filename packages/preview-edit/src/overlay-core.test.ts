@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { COMPUTED_KEYS, describeElement, elementAt, isPickable, pathTo, readComputed } from "./overlay-core";
+import { COMPUTED_KEYS, canEditText, changedSize, describeElement, elementAt, isPickable, pathTo, readComputed } from "./overlay-core";
 
 function page(html: string): Element {
   document.body.innerHTML = html;
@@ -50,5 +50,27 @@ describe("pathTo / elementAt", () => {
     expect(path).toEqual([0, 1, 1]);
     expect(elementAt(root, path)).toBe(target);
     expect(elementAt(root, [0, 9])).toBeNull();
+  });
+});
+
+describe("canEditText", () => {
+  it("allows text-only elements and refuses elements with child elements", () => {
+    page("<p id='a'>plain</p><p id='b'>some <b>bold</b> text</p>");
+    expect(canEditText(document.getElementById("a")!)).toBe(true);
+    expect(canEditText(document.getElementById("b")!)).toBe(false);
+  });
+});
+
+describe("changedSize", () => {
+  const start = { width: 200, height: 40 };
+  it("reports nothing when the size did not change", () => {
+    expect(changedSize("right", start, start)).toBeNull();
+    expect(changedSize("corner", start, { ...start })).toBeNull();
+  });
+  it("reports only the dimension the handle moves and that changed", () => {
+    expect(changedSize("right", start, { width: 250, height: 99 })).toEqual({ width: 250 });
+    expect(changedSize("bottom", start, { width: 250, height: 60 })).toEqual({ height: 60 });
+    expect(changedSize("corner", start, { width: 250, height: 40 })).toEqual({ width: 250 });
+    expect(changedSize("corner", start, { width: 250, height: 60 })).toEqual({ width: 250, height: 60 });
   });
 });

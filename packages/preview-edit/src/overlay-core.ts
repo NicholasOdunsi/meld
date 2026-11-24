@@ -57,3 +57,21 @@ export function elementAt(root: Element, path: readonly number[]): Element | nul
   }
   return node ?? null;
 }
+
+// Editing text in place is only offered for text-only elements: restoring or reporting
+// textContent on an element with child elements would flatten or lose them.
+export function canEditText(el: Element): boolean {
+  return el.children.length === 0;
+}
+
+export type HandleKind = "right" | "bottom" | "corner";
+export type Size = { width: number; height: number };
+
+// Only the dimensions the handle can change AND that really changed are reported, so a plain
+// click on a handle never writes the current size into the user's code.
+export function changedSize(kind: HandleKind, start: Size, end: Size): { width?: number; height?: number } | null {
+  const out: { width?: number; height?: number } = {};
+  if (kind !== "bottom" && end.width !== start.width) out.width = end.width;
+  if (kind !== "right" && end.height !== start.height) out.height = end.height;
+  return Object.keys(out).length ? out : null;
+}
