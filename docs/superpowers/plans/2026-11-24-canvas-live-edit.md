@@ -2,16 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let the owner click an element in a Build Star's live preview on the Canvas and change it (text, colour, size, spacing, corners) directly in the app's code, or describe a bigger change to the AI agent.
+**Goal:** Let the owner click an element in the live preview of any web project's Build Star on the Canvas and change it (text, colour, size, spacing, corners) directly in the code (React projects), or describe a bigger change to the AI agent (every project).
 
-**Architecture:** A script injected into the preview page resolves a clicked element to its source file and line (React 19 `_debugStack` + Next's `/__nextjs_original-stack-frames`). A small Node helper bundled in the Mac app turns that into an element range and applies the existing `@meld/screen-runtime` `inspectElement` / `applyTweak` to the file in the build's worktree. The existing web `TweakPanel` (inside `LivePanel`) shows the fields; the Mac app and the web board exchange selection and edit requests by polling `window.__orionPreviewEdit`, the same way the board's preview frame is polled today.
+**Architecture:** A launcher starts the project's own dev server (Next, Vite, Create React App, Astro, Nuxt, Angular, or its `dev`/`start` script). A script injected into the preview page resolves a clicked element to its source file and line through three strategies (React 18 `_debugSource`, Next's `/__nextjs_original-stack-frames`, and a generic source-map decode of React's `_debugStack`). A small Node helper bundled in the Mac app turns that into an element range and applies the existing `@meld/screen-runtime` `inspectElement` / `applyTweak` to the file in the build's worktree. The existing web `TweakPanel` (inside `LivePanel`) shows the fields; the Mac app and the web board exchange selection and edit requests by polling `window.__orionPreviewEdit`, the same way the board's preview frame is polled today.
 
 **Tech Stack:** TypeScript (new package `@meld/preview-edit`, tsup, vitest, `@babel/standalone`), Swift 6 / SwiftUI / WebKit (apps/mac), React + Astryx + the inspector kit (apps/web).
 
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-11-24-canvas-live-edit-design.md`. Branch: `NicholasOdunsi/canvas-live-edit` (never commit to `main`).
-- Only Next.js / React apps whose preview runs on webpack (`next dev`, no `--turbopack`). Verified on Daily Quest: Next 15.5.0, React 19.1.0.
+- Any web project can be previewed and described; direct edits need React (JSX). Verified by spike: Daily Quest (Next 15.5.0, React 19.1.0) and a fresh Vite 8 + React 19 app. React 18 / Create React App paths are unit-tested only (no real app in the acceptance run); say so in reports.
+- Direct edits touch `.tsx`, `.jsx` and `.js` files only. Turbopack's frame format is not handled (it falls through to the describe box).
 - No file in the user's repo is changed except by an explicit edit; no config, plugin or tag is added to the app.
 - Edits only touch `.tsx` / `.jsx` files inside the Star's recorded worktree (the check `BuildPreview.worktree(for:)` already makes); never `node_modules`, never outside the root, never through a symlink that leaves it.
 - Typed values only: reuse `cssValue` validation inside `applyTweak` (6-digit hex colours, px lengths, weights 100–900). Text edits are the existing `applyTweak` text path.
@@ -28,7 +29,8 @@ New package `packages/preview-edit` (`@meld/preview-edit`):
 
 | File | Responsibility |
 |------|----------------|
-| `src/creation-frame.ts` | Parse a React creation stack into one webpack frame; `resolveSource(element, fetch)` asks the dev server for the original file and line |
+| `src/creation-frame.ts` | Next strategy: parse a React creation stack into one webpack frame; `resolveSource(element, fetch)` asks Next's dev server for the original file and line; `reactFiber(element)` |
+| `src/resolve-source.ts` | The strategy chain: React 18 `_debugSource`, then Next, then source-map decode (`resolveAnySource`) |
 | `src/locate-element.ts` | `(source text, line, column)` → the JSX element's `{start, end}` range |
 | `src/edit-session.ts` | `inspect` / `apply` / `restore` against a worktree on disk, with safe-path rules |
 | `src/cli.ts` | stdin JSON → one `edit-session` call → stdout JSON (the helper the Mac app runs) |
@@ -36,7 +38,7 @@ New package `packages/preview-edit` (`@meld/preview-edit`):
 | `src/overlay.ts` | The injected script: hover outline, click to pick, inline text retype, resize handles, message posting |
 | `tsup.config.ts` | Builds `cli.ts` → `edit-helper.mjs` and `overlay.ts` → `overlay.js` into `apps/mac/Sources/Orion/Resources/PreviewEdit/` |
 
-Mac (`apps/mac/Sources/Orion/Project/`): `PreviewEditResources.swift` (locate bundled files), `PreviewEditHistory.swift` (undo/redo), `PreviewEditHelper.swift` (run the Node helper), `PreviewEditor.swift` (state + exchange with the board), changes to `BuildPreview.swift`, `CanvasLivePreview.swift`, `ProjectScreen.swift`, `FrameModel.swift`, `Package.swift`.
+Mac (`apps/mac/Sources/Orion/Project/`): `PreviewLaunchPlan.swift` (pick how to start a project's dev server), `PreviewEditResources.swift` (locate bundled files), `PreviewEditHistory.swift` (undo/redo), `PreviewEditHelper.swift` (run the Node helper), `PreviewEditor.swift` (state + exchange with the board), changes to `BuildPreview.swift`, `CanvasLivePreview.swift`, `ProjectScreen.swift`, `FrameModel.swift`, `Package.swift`.
 
 Web (`apps/web/src/features/canvas-excalidraw/preview-edit/`): `preview-edit-store.ts` (selection + request queue shared with the Mac app via `window.__orionPreviewEdit`), `preview-edit-panel.tsx` (the panel), plus a small mount in `excalidraw-board.tsx`.
 
@@ -48,12 +50,12 @@ Shared constant: the message and request shapes are defined once in `preview-edi
 
 **Files:**
 - Create: `packages/preview-edit/package.json`, `tsconfig.json`, `eslint.config.mjs`, `vitest.config.ts`
-- Create: `packages/preview-edit/src/creation-frame.ts`
+- Create: `packages/preview-edit/src/creation-frame.ts` (this is the Next.js strategy; Task 1B adds the others)
 - Test: `packages/preview-edit/src/creation-frame.test.ts`
 - Modify: root `package.json` (add `"@meld/preview-edit": "workspace:*"` to `devDependencies`, next to `@meld/prototype`), `pnpm-lock.yaml`
 
 **Interfaces:**
-- Produces: `parseCreationFrame(stack: string): CreationFrame | null`, `resolveSource(element: Element, fetchImpl?: typeof fetch): Promise<ResolvedSource | null>`, types `CreationFrame = { methodName: string; file: string; line: number; column: number }`, `ResolvedSource = { file: string; line: number; column: number }` (file relative to the project root, line and column 1-based).
+- Produces: `parseCreationFrame(stack: string): CreationFrame | null`, `resolveSource(element: Element, fetchImpl?: typeof fetch): Promise<ResolvedSource | null>` (the Next strategy), types `CreationFrame = { methodName: string; file: string; line: number; column: number }`, `ResolvedSource = { file: string; line: number; column: number; fuzzy?: boolean }` (file relative to the project root, line and column 1-based).
 
 - [ ] **Step 1: Scaffold the package**
 
@@ -78,6 +80,7 @@ Shared constant: the message and request shapes are defined once in `preview-edi
   },
   "dependencies": {
     "@babel/standalone": "7.29.14",
+    "@jridgewell/trace-mapping": "0.3.31",
     "@meld/screen-runtime": "workspace:*",
     "zod": "4.4.3"
   },
@@ -219,10 +222,13 @@ export function parseCreationFrame(stack: string): CreationFrame | null {
   return null;
 }
 
-function creationStack(element: Element): string | null {
+export function reactFiber(element: Element): Record<string, unknown> | null {
   const key = Object.keys(element).find((name) => name.startsWith("__reactFiber$"));
-  if (!key) return null;
-  const stack = (element as unknown as Record<string, { _debugStack?: { stack?: unknown } } | undefined>)[key]?._debugStack?.stack;
+  return key ? ((element as unknown as Record<string, Record<string, unknown> | undefined>)[key] ?? null) : null;
+}
+
+function creationStack(element: Element): string | null {
+  const stack = (reactFiber(element)?._debugStack as { stack?: unknown } | undefined)?.stack;
   return typeof stack === "string" ? stack : null;
 }
 
@@ -262,6 +268,239 @@ Expected: all PASS.
 ```bash
 git add packages/preview-edit package.json pnpm-lock.yaml
 git commit -m "Add the preview source resolver"
+```
+
+---
+
+### Task 1B: More ways to find the source (React 18 and source maps)
+
+**Files:**
+- Create: `packages/preview-edit/src/resolve-source.ts`
+- Test: `packages/preview-edit/src/resolve-source.test.ts`
+
+**Interfaces:**
+- Consumes: `reactFiber`, `resolveSource`, `ResolvedSource` (Task 1).
+- Produces: `fromDebugSource(element)`, `parseUrlFrames(stack)`, `firstAppFrame(frames, origin)`, `projectPath(source, moduleUrl)`, `fromSourceMap(element, fetchImpl, origin)`, and `resolveAnySource(element, fetchImpl?, origin?): Promise<ResolvedSource | null>` — the one function the overlay calls. Order: React 18 `_debugSource`, then Next, then source map. The first non-null result wins; every failure is `null`.
+
+- [ ] **Step 1: Write the failing test**
+
+`src/resolve-source.test.ts` (first line `// @vitest-environment jsdom`):
+
+```ts
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
+import { firstAppFrame, fromDebugSource, fromSourceMap, parseUrlFrames, projectPath, resolveAnySource } from "./resolve-source";
+
+const ORIGIN = "http://127.0.0.1:5333";
+// The real stack a Vite 8 + React 19 app produced for its <h1>.
+const VITE_STACK = [
+  "Error: react-stack-top-frame",
+  "    at exports.jsxDEV (http://127.0.0.1:5333/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=dd017fce:196:25)",
+  "    at App (http://127.0.0.1:5333/src/App.tsx:2:5)",
+  "    at Object.react_stack_bottom_frame (http://127.0.0.1:5333/node_modules/.vite/deps/react-dom_client.js?v=7e3ac2ae:14139:12)",
+].join("\n");
+
+// ";IAIU" maps generated line 2, column 4 (0-based) to original line 5, column 10 (0-based) of App.tsx.
+const MAP = { version: 3, sources: ["App.tsx"], names: [], mappings: ";IAIU" };
+const inline = (map: unknown) => `export default 1;\n//# sourceMappingURL=data:application/json;base64,${btoa(JSON.stringify(map))}\n`;
+
+function element(fiber: Record<string, unknown>): Element {
+  const el = document.createElement("h1");
+  Object.assign(el, { __reactFiber$x: fiber });
+  return el;
+}
+const moduleFetch = (text: string) => vi.fn(async () => new Response(text)) as unknown as typeof fetch;
+
+describe("fromDebugSource", () => {
+  it("reads React 18's _debugSource and marks the column as fuzzy", () => {
+    const el = element({ _debugSource: { fileName: "/proj/src/App.jsx", lineNumber: 19, columnNumber: 11 } });
+    expect(fromDebugSource(el)).toEqual({ file: "/proj/src/App.jsx", line: 19, column: 11, fuzzy: true });
+  });
+  it("is null without a usable _debugSource", () => {
+    expect(fromDebugSource(element({}))).toBeNull();
+    expect(fromDebugSource(element({ _debugSource: { fileName: "a.jsx" } }))).toBeNull();
+    expect(fromDebugSource(document.createElement("div"))).toBeNull();
+  });
+});
+
+describe("firstAppFrame", () => {
+  it("skips React internals and dependency bundles and keeps the app frame", () => {
+    expect(firstAppFrame(parseUrlFrames(VITE_STACK), ORIGIN)).toEqual({ methodName: "App", url: "http://127.0.0.1:5333/src/App.tsx", line: 2, column: 5 });
+  });
+  it("ignores frames from another origin", () => {
+    expect(firstAppFrame(parseUrlFrames("    at A (http://cdn.example.com/a.js:1:1)"), ORIGIN)).toBeNull();
+  });
+  it("skips the jsx runtime inside a single bundle (Create React App)", () => {
+    const stack = ["Error", "    at exports.jsxDEV (http://127.0.0.1:5333/static/js/bundle.js:100:1)", "    at App (http://127.0.0.1:5333/static/js/bundle.js:900:7)"].join("\n");
+    expect(firstAppFrame(parseUrlFrames(stack), ORIGIN)?.line).toBe(900);
+  });
+});
+
+describe("projectPath", () => {
+  it("resolves a relative source against the module URL", () => {
+    expect(projectPath("App.tsx", "http://127.0.0.1:5333/src/App.tsx")).toBe("src/App.tsx");
+    expect(projectPath("../lib/x.tsx", "http://127.0.0.1:5333/src/App.tsx")).toBe("lib/x.tsx");
+  });
+  it("strips webpack:// prefixes", () => {
+    expect(projectPath("webpack://my-app/./src/App.js", "http://localhost:3000/static/js/bundle.js")).toBe("src/App.js");
+  });
+});
+
+describe("fromSourceMap", () => {
+  it("decodes an inline source map to the original position", async () => {
+    const el = element({ _debugStack: { stack: VITE_STACK } });
+    const result = await fromSourceMap(el, moduleFetch(inline(MAP)), ORIGIN);
+    expect(result).toEqual({ file: "src/App.tsx", line: 5, column: 11 });
+  });
+  it("follows an external .map file", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(url);
+      return new Response(url.endsWith(".map") ? JSON.stringify(MAP) : "export default 1;\n//# sourceMappingURL=App.tsx.map\n");
+    }) as unknown as typeof fetch;
+    const result = await fromSourceMap(element({ _debugStack: { stack: VITE_STACK } }), fetchImpl, ORIGIN);
+    expect(result?.file).toBe("src/App.tsx");
+    expect(calls[1]).toBe("http://127.0.0.1:5333/src/App.tsx.map");
+  });
+  it("is null when the module has no source map, the fetch fails, or the position is unmapped", async () => {
+    const el = element({ _debugStack: { stack: VITE_STACK } });
+    expect(await fromSourceMap(el, moduleFetch("export default 1;"), ORIGIN)).toBeNull();
+    expect(await fromSourceMap(el, vi.fn(async () => { throw new Error("offline"); }) as unknown as typeof fetch, ORIGIN)).toBeNull();
+    expect(await fromSourceMap(el, moduleFetch(inline({ ...MAP, mappings: "" })), ORIGIN)).toBeNull();
+    expect(await fromSourceMap(document.createElement("div"), moduleFetch(""), ORIGIN)).toBeNull();
+  });
+});
+
+describe("resolveAnySource", () => {
+  it("prefers React 18's _debugSource without any network call", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const el = element({ _debugSource: { fileName: "/p/a.jsx", lineNumber: 3, columnNumber: 5 } });
+    expect(await resolveAnySource(el, fetchImpl, ORIGIN)).toEqual({ file: "/p/a.jsx", line: 3, column: 5, fuzzy: true });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it("falls back to the source map for a Vite-style stack", async () => {
+    const el = element({ _debugStack: { stack: VITE_STACK } });
+    expect(await resolveAnySource(el, moduleFetch(inline(MAP)), ORIGIN)).toEqual({ file: "src/App.tsx", line: 5, column: 11 });
+  });
+  it("is null for an element with no React record (not a React app)", async () => {
+    expect(await resolveAnySource(document.createElement("div"), vi.fn() as unknown as typeof fetch, ORIGIN)).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `pnpm install && pnpm --filter @meld/preview-edit exec vitest run src/resolve-source.test.ts`
+Expected: FAIL (missing module). `pnpm install` adds `@jridgewell/trace-mapping` (commit the lockfile change).
+
+- [ ] **Step 3: Implement**
+
+`src/resolve-source.ts`:
+
+```ts
+import { originalPositionFor, TraceMap } from "@jridgewell/trace-mapping";
+import { reactFiber, resolveSource, type ResolvedSource } from "./creation-frame";
+
+export type UrlFrame = { methodName: string; url: string; line: number; column: number };
+
+// React 17/18 dev builds record where an element was written when the JSX-source transform is on.
+export function fromDebugSource(element: Element): ResolvedSource | null {
+  const source = reactFiber(element)?._debugSource as { fileName?: unknown; lineNumber?: unknown; columnNumber?: unknown } | undefined;
+  if (!source || typeof source.fileName !== "string" || !Number.isInteger(source.lineNumber) || !Number.isInteger(source.columnNumber)) return null;
+  return { file: source.fileName, line: source.lineNumber as number, column: source.columnNumber as number, fuzzy: true };
+}
+
+const URL_FRAME = /^\s*at (?:(\S+) )?\(?(https?:\/\/[^\s)]+?):(\d+):(\d+)\)?\s*$/;
+
+export function parseUrlFrames(stack: string): UrlFrame[] {
+  const frames: UrlFrame[] = [];
+  for (const line of stack.split("\n")) {
+    const match = URL_FRAME.exec(line);
+    if (match) frames.push({ methodName: match[1] ?? "", url: match[2]!, line: Number(match[3]), column: Number(match[4]) });
+  }
+  return frames;
+}
+
+const REACT_INTERNAL = /jsxDEV|jsxs?$|react_stack|renderWith|react-stack/;
+const LIBRARY_PATH = /\/(node_modules|\.vite\/deps|@vite|@react-refresh|@id)(\/|$)/;
+
+// The first frame that is the app's own component: same origin, not React's runtime, not a dependency bundle.
+export function firstAppFrame(frames: UrlFrame[], origin: string): UrlFrame | null {
+  for (const frame of frames) {
+    let url: URL;
+    try { url = new URL(frame.url); } catch { continue; }
+    if (url.origin !== origin || REACT_INTERNAL.test(frame.methodName) || LIBRARY_PATH.test(url.pathname)) continue;
+    return frame;
+  }
+  return null;
+}
+
+// Where a source-map "source" lives in the project, relative to its root.
+export function projectPath(source: string, moduleUrl: string): string | null {
+  const webpack = /^webpack:\/\/[^/]*\/(?:\.\/)?(.+)$/.exec(source);
+  if (webpack) return webpack[1]!;
+  try {
+    const path = decodeURIComponent(new URL(source, moduleUrl).pathname).replace(/^\/+/, "");
+    return path || null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadMap(moduleUrl: string, fetchImpl: typeof fetch): Promise<unknown | null> {
+  const text = await (await fetchImpl(moduleUrl)).text();
+  const reference = [...text.matchAll(/\/\/[#@] sourceMappingURL=(\S+)/g)].at(-1)?.[1];
+  if (!reference) return null;
+  if (reference.startsWith("data:")) {
+    const inline = /^data:application\/json(?:;charset=[^;,]+)?;base64,(.+)$/.exec(reference);
+    if (!inline) return null;
+    return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(inline[1]!), (char) => char.charCodeAt(0))));
+  }
+  return (await fetchImpl(new URL(reference, moduleUrl).href)).json();
+}
+
+// Any bundler that serves source maps (Vite, Parcel, Create React App, Rspack...): decode React's creation
+// position in the served module back to the file the author wrote.
+export async function fromSourceMap(element: Element, fetchImpl: typeof fetch, origin: string): Promise<ResolvedSource | null> {
+  const stack = (reactFiber(element)?._debugStack as { stack?: unknown } | undefined)?.stack;
+  if (typeof stack !== "string") return null;
+  const frame = firstAppFrame(parseUrlFrames(stack), origin);
+  if (!frame) return null;
+  try {
+    const map = await loadMap(frame.url, fetchImpl);
+    if (!map) return null;
+    const original = originalPositionFor(new TraceMap(map as ConstructorParameters<typeof TraceMap>[0]), { line: frame.line, column: frame.column - 1 });
+    if (original.source === null || original.line === null || original.column === null) return null;
+    const file = projectPath(original.source, frame.url);
+    return file ? { file, line: original.line, column: original.column + 1 } : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveAnySource(
+  element: Element,
+  fetchImpl: typeof fetch = fetch,
+  origin: string = location.origin,
+): Promise<ResolvedSource | null> {
+  return fromDebugSource(element) ?? (await resolveSource(element, fetchImpl)) ?? (await fromSourceMap(element, fetchImpl, origin));
+}
+```
+
+- [ ] **Step 4: Run the tests, lint and typecheck**
+
+Run: `pnpm --filter @meld/preview-edit exec vitest run && pnpm --filter @meld/preview-edit lint && pnpm --filter @meld/preview-edit typecheck`
+Expected: PASS. In the Next-strategy tests from Task 1 nothing changes. If the "unmapped position" test (`mappings: ""`) throws inside `TraceMap`, the `try/catch` already returns `null`; if it instead returns a mapping, change that case to a map whose only segment is on another line.
+
+- [ ] **Step 5: Real check against a Vite app**
+
+Create a scratch Vite app (`npm create vite@latest app -- --template react-ts --no-interactive`, `npm install`), start it with `npx vite --host 127.0.0.1 --port 5333`, bundle the overlay the same way as Task 5 Step 6 (build first), inject it with Playwright and click the `<h1>`. Expected: the posted `picked` message has `src: { file: "src/App.tsx", line: <the <h1> line>, column: 11 }`. Kill the server afterwards.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add packages/preview-edit pnpm-lock.yaml
+git commit -m "Find an element's source through React 18 records and source maps"
 ```
 
 ---
@@ -485,6 +724,18 @@ describe("safe paths", () => {
     await symlink(path.join(elsewhere, "page.tsx"), path.join(root, "app/linked.tsx"));
     expect(await inspect(root, { ...tagline, file: "app/linked.tsx" })).toEqual({ ok: false, reason: "outside-root" });
   });
+  it("accepts a plain .js file that contains JSX", async () => {
+    await writeFile(path.join(root, "app/legacy.js"), "export const A = () => <p>Hi</p>;\n");
+    const result = await inspect(root, { file: "app/legacy.js", line: 1, column: 24 });
+    expect(result.ok && result.fields.text.value).toBe("Hi");
+  });
+  it("tries one column less for a fuzzy position, and only when asked", async () => {
+    expect((await inspect(root, { ...tagline, column: 8 })).ok).toBe(false);
+    expect((await inspect(root, { ...tagline, column: 8, fuzzy: true })).ok).toBe(true);
+  });
+  it("accepts an absolute path that is inside the root", async () => {
+    expect((await inspect(root, { ...tagline, file: path.join(root, "app/page.tsx") })).ok).toBe(true);
+  });
   it("refuses a very large file", async () => {
     await writeFile(path.join(root, "app/big.tsx"), "x".repeat(200_001));
     expect(await inspect(root, { ...tagline, file: "app/big.tsx" })).toEqual({ ok: false, reason: "too-large" });
@@ -522,7 +773,8 @@ import { applyTweak, inspectElement } from "@meld/screen-runtime/edit";
 import type { Inspection, Tweak } from "@meld/screen-runtime/edit/types";
 import { locateElementAt } from "./locate-element";
 
-export type Source = { file: string; line: number; column: number };
+// `fuzzy` marks a position from React 18's _debugSource, whose column base differs by toolchain: try it, then one less.
+export type Source = { file: string; line: number; column: number; fuzzy?: boolean };
 export type Change = { path: string; before: string; after: string };
 export type Failure = "not-found" | "not-literal" | "too-large" | "outside-root" | "conflict";
 export type Outcome =
@@ -530,7 +782,7 @@ export type Outcome =
   | { ok: false; reason: Failure };
 
 const MAX_FILE_CHARS = 200_000;
-const JSX_FILE = /\.(tsx|jsx)$/;
+const JSX_FILE = /\.(tsx|jsx|js)$/;
 
 type Resolved = { absolute: string; relative: string };
 
@@ -557,6 +809,11 @@ async function writeAtomically(file: string, contents: string): Promise<void> {
   }
 }
 
+function findRange(text: string, file: string, src: Source) {
+  return locateElementAt(text, file, src.line, src.column)
+    ?? (src.fuzzy && src.column > 1 ? locateElementAt(text, file, src.line, src.column - 1) : null);
+}
+
 type Target = { resolved: Resolved; text: string; entry: string; tag: string };
 
 async function target(root: string, src: Source): Promise<Target | Failure> {
@@ -565,7 +822,7 @@ async function target(root: string, src: Source): Promise<Target | Failure> {
   const text = await fs.readFile(resolved.absolute, "utf8").catch(() => null);
   if (text === null) return "not-found";
   if (text.length > MAX_FILE_CHARS) return "too-large";
-  const range = locateElementAt(text, resolved.relative, src.line, src.column);
+  const range = findRange(text, resolved.relative, src);
   if (!range) return "not-found";
   // The edit library only knows screen-shaped paths; it needs the extension and nothing else.
   const entry = `entry.${path.extname(resolved.relative).slice(1)}`;
@@ -587,7 +844,7 @@ export async function apply(root: string, src: Source, tweak: Tweak): Promise<Ou
   const after = result.files[found.entry]!;
   await writeAtomically(found.resolved.absolute, after);
   // An edit inside the element never moves its opening "<", so the same position still finds it.
-  const range = locateElementAt(after, found.resolved.relative, src.line, src.column);
+  const range = findRange(after, found.resolved.relative, src);
   const fields = range ? inspectElement({ [found.entry]: after }, `${found.entry}:${range.start}:${range.end}`) : null;
   if (!fields) return { ok: false, reason: "not-found" };
   return { ok: true, fields, changes: [{ path: found.resolved.relative, before: found.text, after }] };
@@ -701,6 +958,7 @@ const Source = z.object({
   file: z.string().min(1).max(300),
   line: z.number().int().positive(),
   column: z.number().int().positive(),
+  fuzzy: z.boolean().optional(),
 }).strict();
 
 const Request = z.discriminatedUnion("op", [
@@ -824,11 +1082,11 @@ git commit -m "Bundle the preview edit helper into the Mac app"
 - Create (generated, committed): `apps/mac/Sources/Orion/Resources/PreviewEdit/overlay.js`
 
 **Interfaces:**
-- Consumes: `resolveSource` (Task 1).
+- Consumes: `resolveAnySource` (Task 1B).
 - Produces (from `overlay-core.ts`): `COMPUTED_KEYS`, `type Computed = Record<(typeof COMPUTED_KEYS)[number], string>`, `isPickable(el: Element): boolean`, `readComputed(el: Element, win: Window): Computed`, `describeElement(el: Element, win: Window): { tag: string; text: string; html: string; computed: Computed }`, `pathTo(el: Element, root: Element): number[]`, `elementAt(root: Element, path: readonly number[]): Element | null`.
 - Produces (page API, `window.__orionPreviewEdit`): `setEnabled(on: boolean)`, `setSelectionInfo({ textEditable: boolean })`, `reselect()`.
 - Messages posted to Swift via `window.webkit.messageHandlers.orionPreview.postMessage(object)`:
-  - `{ "type": "picked", "src": { "file": string, "line": number, "column": number } | null, "tag": string, "text": string, "html": string, "computed": Computed }`
+  - `{ "type": "picked", "src": { "file": string, "line": number, "column": number, "fuzzy"?: boolean } | null, "tag": string, "text": string, "html": string, "computed": Computed }`
   - `{ "type": "cleared" }`
   - `{ "type": "retyped", "text": string }`
   - `{ "type": "resized", "width": number, "height": number }` (integer CSS px; either may be omitted when unchanged)
@@ -972,10 +1230,10 @@ Expected: PASS.
 
 - [ ] **Step 4: Implement the injected script**
 
-`overlay.ts` (not unit-tested: it is a thin shell over the tested core and the Task 1 resolver; it is verified in Task 10's acceptance run):
+`overlay.ts` (not unit-tested: it is a thin shell over the tested core and the Task 1 resolver; it is verified in Task 9's acceptance run):
 
 ```ts
-import { resolveSource } from "./creation-frame";
+import { resolveAnySource } from "./resolve-source";
 import { describeElement, elementAt, isPickable, pathTo } from "./overlay-core";
 
 // One colour for the outline and handles inside the third-party preview page, where Orion's tokens do not exist.
@@ -1062,7 +1320,7 @@ async function pick(target: Element) {
   selectedPath = pathTo(target, document.documentElement);
   outline("orion-selected", target, true);
   drawHandles();
-  const src = await resolveSource(target);
+  const src = await resolveAnySource(target);
   if (selected !== target) return;
   post({ type: "picked", src, ...describeElement(target, window) });
 }
@@ -1470,7 +1728,7 @@ struct PreviewEditHelper: PreviewEditRunning {
 import Foundation
 import Observation
 
-struct PreviewSource: Codable, Equatable, Sendable { let file: String; let line: Int; let column: Int }
+struct PreviewSource: Codable, Equatable, Sendable { let file: String; let line: Int; let column: Int; var fuzzy: Bool? = nil }
 
 struct PreviewPick: Decodable, Equatable {
     let src: PreviewSource?
@@ -1620,7 +1878,9 @@ final class PreviewEditor {
     }
 
     private func srcJSON(_ source: PreviewSource) -> [String: Any] {
-        ["file": source.file, "line": source.line, "column": source.column]
+        var json: [String: Any] = ["file": source.file, "line": source.line, "column": source.column]
+        if let fuzzy = source.fuzzy { json["fuzzy"] = fuzzy }
+        return json
     }
 
     private func fields(from reply: [String: Any]) -> [String: FieldState]? {
@@ -1720,6 +1980,297 @@ Expected: PASS. (The test for the unresolved element expects exactly the sentenc
 ```bash
 git add apps/mac
 git commit -m "Add the Mac preview editor model"
+```
+
+---
+
+### Task 6B: Preview launcher for any web project
+
+**Files:**
+- Create: `apps/mac/Sources/Orion/Project/PreviewLaunchPlan.swift`
+- Test: `apps/mac/Tests/OrionTests/PreviewLaunchPlanTests.swift`
+- Modify: `apps/mac/Sources/Orion/Project/BuildPreview.swift` (`canPreview`, `start`, `stop`, failure text)
+
+**Interfaces:**
+- Produces:
+  - `struct PreviewLaunchFiles { let read: (String) -> Data?; let exists: (String) -> Bool }` (paths relative to the worktree)
+  - `struct PreviewLaunchPlan: Equatable { enum Kind: Equatable { case node(entry: String); case npmScript(String) }; let kind: Kind; let arguments: [String]; let environment: [String: String] }`
+  - `enum PreviewLaunchError: Error, Equatable { case notAWebProject, dependenciesMissing, noDevScript }`
+  - `enum PreviewLauncher { static func plan(packageJSON: Data, port: UInt16, files: PreviewLaunchFiles) throws(PreviewLaunchError) -> PreviewLaunchPlan }`
+
+- [ ] **Step 1: Write the failing test**
+
+`PreviewLaunchPlanTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import Orion
+
+struct PreviewLaunchPlanTests {
+    private func files(_ present: [String: String]) -> PreviewLaunchFiles {
+        PreviewLaunchFiles(
+            read: { present[$0].map { Data($0.utf8) } },
+            exists: { path in present.keys.contains { $0 == path || $0.hasPrefix(path + "/") } })
+    }
+    private func manifest(_ json: String) -> Data { Data(json.utf8) }
+
+    @Test func nextRunsItsOwnBinaryOnLoopback() throws {
+        let plan = try PreviewLauncher.plan(
+            packageJSON: manifest(#"{"dependencies":{"next":"15.5.0"}}"#), port: 4100,
+            files: files(["node_modules/next/package.json": #"{"bin":{"next":"./dist/bin/next"}}"#]))
+        #expect(plan.kind == .node(entry: "node_modules/next/dist/bin/next"))
+        #expect(plan.arguments == ["dev", "--hostname", "127.0.0.1", "--port", "4100"])
+    }
+
+    @Test func viteRunsItsBinaryWithAStrictPort() throws {
+        let plan = try PreviewLauncher.plan(
+            packageJSON: manifest(#"{"devDependencies":{"vite":"8.3.6","react":"19"}}"#), port: 5200,
+            files: files(["node_modules/vite/package.json": #"{"bin":{"vite":"bin/vite.js"}}"#]))
+        #expect(plan.kind == .node(entry: "node_modules/vite/bin/vite.js"))
+        #expect(plan.arguments == ["--host", "127.0.0.1", "--port", "5200", "--strictPort"])
+    }
+
+    @Test func aStringBinFieldWorks() throws {
+        let plan = try PreviewLauncher.plan(
+            packageJSON: manifest(#"{"devDependencies":{"vite":"8"}}"#), port: 1,
+            files: files(["node_modules/vite/package.json": #"{"bin":"./cli.js"}"#]))
+        #expect(plan.kind == .node(entry: "node_modules/vite/cli.js"))
+    }
+
+    @Test func createReactAppIsConfiguredThroughEnvironment() throws {
+        let plan = try PreviewLauncher.plan(
+            packageJSON: manifest(#"{"dependencies":{"react-scripts":"5.0.1"}}"#), port: 3300,
+            files: files(["node_modules/react-scripts/package.json": #"{"bin":{"react-scripts":"./bin/react-scripts.js"}}"#]))
+        #expect(plan.arguments == ["start"])
+        #expect(plan.environment == ["PORT": "3300", "HOST": "127.0.0.1", "BROWSER": "none"])
+    }
+
+    @Test func nextWinsOverViteWhenBothArePresent() throws {
+        let plan = try PreviewLauncher.plan(
+            packageJSON: manifest(#"{"dependencies":{"next":"15","vite":"8"}}"#), port: 1,
+            files: files(["node_modules/next/package.json": #"{"bin":{"next":"dist/bin/next"}}"#,
+                          "node_modules/vite/package.json": #"{"bin":{"vite":"bin/vite.js"}}"#]))
+        #expect(plan.kind == .node(entry: "node_modules/next/dist/bin/next"))
+    }
+
+    @Test func anUnknownProjectRunsItsDevScriptThenItsStartScript() throws {
+        let installed = files(["node_modules/.package-lock.json": "{}"])
+        let dev = try PreviewLauncher.plan(
+            packageJSON: manifest(#"{"scripts":{"start":"node a","dev":"node b"}}"#), port: 3400, files: installed)
+        #expect(dev.kind == .npmScript("dev"))
+        #expect(dev.environment["PORT"] == "3400")
+        let start = try PreviewLauncher.plan(packageJSON: manifest(#"{"scripts":{"start":"node a"}}"#), port: 1, files: installed)
+        #expect(start.kind == .npmScript("start"))
+    }
+
+    @Test func missingDependenciesAreReportedNotLaunched() {
+        #expect(throws: PreviewLaunchError.dependenciesMissing) {
+            try PreviewLauncher.plan(packageJSON: manifest(#"{"dependencies":{"vite":"8"}}"#), port: 1, files: files([:]))
+        }
+        #expect(throws: PreviewLaunchError.dependenciesMissing) {
+            try PreviewLauncher.plan(packageJSON: manifest(#"{"scripts":{"dev":"x"}}"#), port: 1, files: files([:]))
+        }
+    }
+
+    @Test func aProjectWithNothingToRunIsNotPreviewable() {
+        let installed = files(["node_modules/.package-lock.json": "{}"])
+        #expect(throws: PreviewLaunchError.noDevScript) {
+            try PreviewLauncher.plan(packageJSON: manifest(#"{"scripts":{"build":"x"}}"#), port: 1, files: installed)
+        }
+        #expect(throws: PreviewLaunchError.notAWebProject) {
+            try PreviewLauncher.plan(packageJSON: manifest("not json"), port: 1, files: installed)
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `cd apps/mac && swift test --filter PreviewLaunchPlanTests`
+Expected: FAIL (missing types).
+
+- [ ] **Step 3: Implement the planner**
+
+`PreviewLaunchPlan.swift`:
+
+```swift
+import Foundation
+
+struct PreviewLaunchFiles {
+    let read: (String) -> Data?
+    let exists: (String) -> Bool
+}
+
+struct PreviewLaunchPlan: Equatable {
+    enum Kind: Equatable {
+        case node(entry: String)
+        case npmScript(String)
+    }
+    let kind: Kind
+    let arguments: [String]
+    let environment: [String: String]
+}
+
+enum PreviewLaunchError: Error, Equatable {
+    case notAWebProject
+    case dependenciesMissing
+    case noDevScript
+}
+
+/// Chooses how to start a project's own dev server on a loopback port Orion reserved.
+/// Known tools run their installed binary directly with Orion's Node; anything else runs the
+/// project's `dev` (then `start`) script through npm with PORT set.
+enum PreviewLauncher {
+    private struct Known {
+        let package: String
+        let bin: String
+        let arguments: (UInt16) -> [String]
+        let environment: (UInt16) -> [String: String]
+    }
+
+    private static func loopback(_ command: [String]) -> (UInt16) -> [String] {
+        { port in command + ["--host", "127.0.0.1", "--port", String(port)] }
+    }
+
+    // Order matters: frameworks built on Vite also list `vite`, so Vite is last.
+    private static let known: [Known] = [
+        Known(package: "next", bin: "next",
+              arguments: { ["dev", "--hostname", "127.0.0.1", "--port", String($0)] }, environment: { _ in [:] }),
+        Known(package: "react-scripts", bin: "react-scripts",
+              arguments: { _ in ["start"] },
+              environment: { ["PORT": String($0), "HOST": "127.0.0.1", "BROWSER": "none"] }),
+        Known(package: "astro", bin: "astro", arguments: loopback(["dev"]), environment: { _ in [:] }),
+        Known(package: "nuxt", bin: "nuxt", arguments: loopback(["dev"]), environment: { _ in [:] }),
+        Known(package: "@angular/cli", bin: "ng", arguments: loopback(["serve"]), environment: { _ in [:] }),
+        Known(package: "vite", bin: "vite",
+              arguments: { ["--host", "127.0.0.1", "--port", String($0), "--strictPort"] }, environment: { _ in [:] }),
+    ]
+
+    static func plan(packageJSON: Data, port: UInt16, files: PreviewLaunchFiles) throws(PreviewLaunchError) -> PreviewLaunchPlan {
+        guard let manifest = (try? JSONSerialization.jsonObject(with: packageJSON)) as? [String: Any] else {
+            throw .notAWebProject
+        }
+        let dependencies = Set((manifest["dependencies"] as? [String: Any] ?? [:]).keys)
+            .union((manifest["devDependencies"] as? [String: Any] ?? [:]).keys)
+        for tool in known where dependencies.contains(tool.package) {
+            guard let entry = binEntry(of: tool.package, named: tool.bin, files: files) else { throw .dependenciesMissing }
+            return PreviewLaunchPlan(kind: .node(entry: entry), arguments: tool.arguments(port), environment: tool.environment(port))
+        }
+        let scripts = manifest["scripts"] as? [String: Any] ?? [:]
+        guard let script = ["dev", "start"].first(where: { scripts[$0] is String }) else { throw .noDevScript }
+        guard files.exists("node_modules") else { throw .dependenciesMissing }
+        return PreviewLaunchPlan(kind: .npmScript(script), arguments: [],
+                                 environment: ["PORT": String(port), "HOST": "127.0.0.1", "BROWSER": "none"])
+    }
+
+    /// The installed package's own `bin` entry, relative to the worktree (nil when it is not installed).
+    private static func binEntry(of package: String, named bin: String, files: PreviewLaunchFiles) -> String? {
+        guard let data = files.read("node_modules/\(package)/package.json"),
+              let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let relative: String?
+        if let single = manifest["bin"] as? String {
+            relative = single
+        } else if let table = manifest["bin"] as? [String: String] {
+            relative = table[bin] ?? table.values.first
+        } else {
+            relative = nil
+        }
+        guard var path = relative, !path.contains("..") else { return nil }
+        if path.hasPrefix("./") { path.removeFirst(2) }
+        return "node_modules/\(package)/\(path)"
+    }
+}
+```
+
+- [ ] **Step 4: Run the tests**
+
+Run: `swift test --filter PreviewLaunchPlanTests`
+Expected: PASS.
+
+- [ ] **Step 5: Use the plan in `BuildPreview`**
+
+In `BuildPreview.swift` replace `canPreview` and the process setup in `start`:
+
+```swift
+    private func launchPlan(for starID: String, port: UInt16) -> Result<PreviewLaunchPlan, PreviewLaunchError> {
+        guard let folder = worktree(for: starID),
+              let manifest = try? Data(contentsOf: folder.appending(path: "package.json")) else { return .failure(.notAWebProject) }
+        let files = PreviewLaunchFiles(
+            read: { try? Data(contentsOf: folder.appending(path: $0)) },
+            exists: { FileManager.default.fileExists(atPath: folder.appending(path: $0).path) })
+        do { return .success(try PreviewLauncher.plan(packageJSON: manifest, port: port, files: files)) }
+        catch let error as PreviewLaunchError { return .failure(error) }
+        catch { return .failure(.notAWebProject) }
+    }
+
+    func canPreview(_ starID: String) -> Bool {
+        if case .success = launchPlan(for: starID, port: 3000) { return true }
+        return false
+    }
+
+    private func message(for error: PreviewLaunchError) -> String {
+        switch error {
+        case .dependenciesMissing: String(localized: "Install this project's dependencies in the build worktree first.")
+        case .noDevScript: String(localized: "This project has no dev or start script to preview.")
+        case .notAWebProject: String(localized: "This project can't be previewed.")
+        }
+    }
+```
+
+In `start(_:)`, after the port is reserved, replace the Next-specific `Process` setup:
+
+```swift
+        let plan: PreviewLaunchPlan
+        switch launchPlan(for: id, port: port) {
+        case .success(let value): plan = value
+        case .failure(let error): failure = (id, message(for: error)); return nil
+        }
+        let runtime = nodeURL.deletingLastPathComponent()
+        let child = Process()
+        switch plan.kind {
+        case .node(let entry):
+            child.executableURL = nodeURL
+            child.arguments = [entry] + plan.arguments
+        case .npmScript(let name):
+            child.executableURL = runtime.appending(path: "npm")
+            child.arguments = ["run", name]
+        }
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = runtime.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+        for (key, value) in plan.environment { environment[key] = value }
+        child.environment = environment
+        child.currentDirectoryURL = folder
+```
+
+(keep the existing `standardInput/Output/Error`, `terminationHandler`, readiness polling and `failure = (id, "The preview server could not start.")` code unchanged; delete the old `guard let folder = worktree(for: id), canPreview(id)` block and the old `child.executableURL`/`arguments` lines; keep `folder` from `worktree(for: id)`). Replace the old reserved-port guard's failure text only if it conflicts; its wording stays.
+
+An `npm run` child starts its own children, so `terminate()` on the parent would leave the dev server running. In `stop()` and in the failure path, before `server.process.terminate()` add:
+
+```swift
+    private func terminateTree(_ process: Process) {
+        guard process.isRunning else { return }
+        let pkill = Process()
+        pkill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        pkill.arguments = ["-TERM", "-P", String(process.processIdentifier)]
+        try? pkill.run()
+        pkill.waitUntilExit()
+        process.terminate()
+    }
+```
+
+and call `terminateTree(server.process)` / `terminateTree(child)` instead of the bare `terminate()` calls.
+
+- [ ] **Step 6: Build and run the Mac tests**
+
+Run: `cd apps/mac && swift build 2>&1 | tail -10 && swift test 2>&1 | tail -10`
+Expected: Build complete; PASS. Then confirm the existing Daily Quest Star still previews (Task 9 covers the real run).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/mac
+git commit -m "Start any web project's dev server for the Canvas preview"
 ```
 
 ---
@@ -2253,7 +2804,7 @@ git commit -m "Add the Canvas edit panel for app previews"
 
 ---
 
-### Task 9: Acceptance on Daily Quest in Orion Staging
+### Task 9: Acceptance on Daily Quest (Next.js) and a Vite app in Orion Staging
 
 **Files:** none new (manual verification and fixes found by it).
 
@@ -2283,7 +2834,17 @@ codesign --force --deep --sign - "$APP" && open "$APP"
 8. While that build is running, click an element and try a change. Expected: the panel shows "This Star is still building. Edit once it finishes." and nothing is written.
 9. Stop the preview server (kill the `next dev` child) and wait for the preview to drop. Expected: edit mode turns off.
 
-Save a screenshot of steps 2 and 6 to `.context/` and embed them in the final report. Any step that fails: fix it with a test where the layer has one, re-run the whole script, and note the fix in the commit message.
+**Part B — a Vite + React app.** Make a scratch app (`npm create vite@latest vite-qa -- --template react-ts --no-interactive`, `git init`, commit), then in Orion Staging create a project, link that folder (Link project code → local folder), and send: "Install the dependencies with npm install, then add a one-line tagline under the heading." Approve the requests.
+
+10. When the Star finishes, click **Preview in Canvas**. Expected: the Vite app renders in the frame (the launcher chose `vite`, not `next`).
+11. Turn on the pencil and click the `<h1>`. Expected: the panel opens, the Text field shows the heading, and the result is `src/App.tsx` (check the describe text in step 12).
+12. Change the heading text and colour; undo; redo. Expected: the same behaviour as steps 3–5, and `git diff` in the Star's worktree changes only `src/App.tsx`.
+13. Send a described change. Expected: the build message contains `Code: src/App.tsx:`.
+14. Stop Orion and relaunch: no orphaned `vite` process remains (`pgrep -fl "vite --host"` is empty).
+
+**Part C — a project that cannot be edited directly.** If a React 18, Create React App or Vue app is at hand, repeat steps 10–11 against it and note what happens (preview should start; a non-React app should show the "can't find this element's code" message and keep the describe box). Do not block the release on Part C, but report it plainly as tested or not tested.
+
+Save screenshots of steps 2, 6 and 11 to `.context/` and embed them in the final report. Any step that fails: fix it with a test where the layer has one, re-run the whole script, and note the fix in the commit message.
 
 - [ ] **Step 3: Full verification**
 
@@ -2298,6 +2859,6 @@ Push the branch, open a PR to `main` titled "Edit a running app by pointing at i
 
 ## Self-Review
 
-- **Spec coverage:** source resolver (Task 1); element range + edit helper reusing the existing editor, safe writes, `not-found` / `not-literal` / `too-large` / `outside-root` (Tasks 2–4); selection overlay with hover, click, inline text retype and resize handles (Task 5); property list and panel reuse via `TweakPanel` in `LivePanel` with the same inspector kit (Task 8); undo/redo outside Git (Task 6); describe path via `sendStream(build: true)` with element context, text only (Tasks 6, 8); lock while building and when the preview is down (Tasks 6, 7); pencil toggle in the preview header (Task 7); Mac bundling and CI staleness (Task 4); tests per layer and the Daily Quest acceptance (Task 9). Deliberately not covered because the spec excludes them: reordering/dragging in the page flow, CSS modules and shared stylesheets, screenshots, Turbopack.
+- **Spec coverage:** source resolver (Tasks 1, 1B); element range + edit helper reusing the existing editor, safe writes, `not-found` / `not-literal` / `too-large` / `outside-root` (Tasks 2–4); selection overlay with hover, click, inline text retype and resize handles (Task 5); property list and panel reuse via `TweakPanel` in `LivePanel` with the same inspector kit (Task 8); undo/redo outside Git (Task 6); describe path via `sendStream(build: true)` with element context, text only (Tasks 6, 8); lock while building and when the preview is down (Tasks 6, 7); pencil toggle in the preview header (Task 7); Mac bundling and CI staleness (Task 4); tests per layer and the Daily Quest acceptance (Task 9). Any-project preview (Task 6B) and the React 18 / Create React App / Vite lookups (Task 1B). Deliberately not covered because the spec excludes them: reordering/dragging in the page flow, CSS modules and shared stylesheets, screenshots, Turbopack, and direct edits for Vue, Svelte, Angular and plain HTML (they get preview, selection and the describe box).
 - **Placeholder scan:** the only "read this first" instructions point to specific existing lines (`jsx.ts:1-2,368-380`, `live-panel.tsx:21-30`, `hand-edit-panel.tsx:170`, the `agentChoice()` function) where an exact existing signature could differ; each says what to do if it does.
 - **Type consistency:** `Source`/`Change`/`Outcome` (Task 3) are what the helper protocol (Task 4) and `PreviewEditChange` / helper JSON (Task 6) carry; overlay messages (Task 5) are the cases `PreviewMessage(body:)` decodes (Task 6); `PreviewRequest` kinds (`tweak`, `undo`, `redo`, `describe`, `close`) match between `preview-edit-store.ts` (Task 8) and `PreviewRequest(json:)` (Task 6); the selection JSON keys in `PreviewEditor.Selection` match `SelectionSchema` in the store.

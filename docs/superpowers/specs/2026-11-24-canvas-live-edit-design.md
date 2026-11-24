@@ -29,7 +29,13 @@ screen *is* the code, so Orion can rewrite it. This spec gives real apps the sam
 
 **What it will not do (version 1):**
 
-- Only Next.js / React apps like Daily Quest (the only kind Preview supports today).
+- **Any web project can be previewed and described to the agent** (Next.js, Vite,
+  Create React App, Astro, Nuxt, Angular, Parcel, or any project whose `dev`/`start`
+  script serves a web page). **Direct edits work for React projects** (Next.js, Vite,
+  Create React App, Remix and the like), because the editor understands React code (JSX).
+  For Vue, Svelte, Angular and plain HTML, clicking an element still works and the
+  describe box still sends the agent the element's HTML and styles, but the instant
+  direct edits come later, one framework at a time.
 - Nothing is saved to Git automatically. Edits change the files in the build's own
   working copy, exactly like the AI agent's edits do. Committing and pushing stay the
   separate steps they are today.
@@ -44,13 +50,13 @@ screen *is* the code, so Orion can rewrite it. This spec gives real apps the sam
   your request. A screenshot attachment is left for later because build requests carry
   text only today.
 
-**How Orion knows which line of code you clicked (tested on Daily Quest, it works):**
-React 19 dev builds remember where each element was created, and Next's dev server can
-turn that into the real file and line (for example `app/page.tsx:415`). Orion reads it
-when you click, so nothing is added to the app's code or build and no repo file changes.
-Where a value comes from code rather than being typed in (Daily Quest's big greeting
-words are computed), Orion says "can't change this one directly" and offers the describe
-box instead of guessing.
+**How Orion knows which line of code you clicked (tested on Daily Quest and a fresh Vite app, both work):**
+React remembers where each element was created. Orion reads that when you click and
+turns it into the real file and line, for example `app/page.tsx:415` in Next.js or
+`src/App.tsx:19` in Vite. Nothing is added to the app's code or build and no repo file
+changes. Where a value comes from code rather than being typed in (Daily Quest's big
+greeting words are computed), Orion says "can't change this one directly" and offers the
+describe box instead of guessing.
 
 ## How it works (for the builders)
 
@@ -64,14 +70,28 @@ Preview (WKWebView in the Mac app)   Canvas board (web)            Mac app
 
 ### Pieces, one purpose each
 
-1. **Source resolver (runtime, no tagging).** In the preview page, a clicked element's
-   React fiber carries `_debugStack`. Its first `webpack-internal:///(app-pages-browser)/./`
-   frame names the component's file with compiled coordinates; a POST to the dev server's
-   `/__nextjs_original-stack-frames` turns that into `{ file, line1, column1 }` of the
-   element's opening `<` in the original source. Verified on Daily Quest (Next 15.5.0,
-   React 19.1.0): `<h1>` resolved to `app/page.tsx:415:11`. The preview already runs
-   webpack (`next dev` without `--turbopack`). This relies on two Next/React dev-mode
-   details, so the helper reports `not-found` (never guesses) if either is missing.
+0. **Preview launcher (any project).** Preview in Canvas no longer assumes Next.js. A
+   launch plan is chosen from the project's `package.json` and installed binaries: Next
+   (`next dev`), Vite (`vite`), Create React App (`react-scripts start`), Astro, Nuxt,
+   Angular (`ng serve`), Parcel, and otherwise the project's own `dev` (then `start`)
+   script run with `PORT` set. Each binds to `127.0.0.1` on a port Orion reserves and
+   Orion waits for HTTP to answer. A project without installed dependencies explains
+   that instead of failing silently.
+1. **Source resolver (runtime, three strategies, no tagging).** Tried in order for a
+   clicked element, any failure being "not found" (never a guess):
+   a. React 17/18 dev builds that carry `fiber._debugSource` (`fileName`, `lineNumber`,
+      `columnNumber`): used as is.
+   b. Next.js: the first `webpack-internal:///(app-pages-browser)/./` frame of
+      `fiber._debugStack`, mapped by the dev server's `/__nextjs_original-stack-frames`.
+      Verified on Daily Quest (Next 15.5.0, React 19.1.0): `<h1>` → `app/page.tsx:415:11`.
+   c. Any other bundler that serves source maps (Vite, Parcel, Create React App,
+      Rspack…): the first app frame of `fiber._debugStack` names a module URL; the module
+      is fetched, its source map (inline `data:` or a `.map` file) is decoded with a
+      bundled `@jridgewell/trace-mapping`, and the original path is resolved against the
+      module URL. Verified on a fresh Vite 8 + React 19 app: `src/App.tsx:54:65` →
+      `src/App.tsx` line 19, the `<h1>`.
+   The first usable result wins. Non-React apps have no creation record, so they fall
+   through to "not found" and the describe box.
 2. **Selection overlay.** A script injected into the preview's WebKit view
    (`WKUserScript`). Highlights on hover, selects on click, reports
    `{resolved file and line, tag name, text, computed style subset, bounding box}` to the Mac app, and
@@ -95,7 +115,7 @@ Preview (WKWebView in the Mac app)   Canvas board (web)            Mac app
    when an element has no editable style (exactly what screen editing does today). It
    does not edit shared stylesheets in version 1. It reports success with before/after
    contents of each changed file, or `not-found` / `not-literal` / `too-large` /
-   `outside-root`. It was chosen over the connector because the Mac app ships
+   `outside-root`. It edits `.tsx`, `.jsx` and `.js` files (Create React App writes JSX in `.js`). It was chosen over the connector because the Mac app ships
    automatically while connector distribution is still blocked, and because it needs no
    cloud round trip.
 6. **Undo stack.** The Mac app keeps before/after contents of each edited file, per Star,
@@ -131,20 +151,21 @@ Preview (WKWebView in the Mac app)   Canvas board (web)            Mac app
 ### If the source resolver stops working (a future Next/React change)
 
 The panel shows "Orion can't find this element's code" and offers the describe box for
-every element. Nothing is written. (Turbopack frames look different and are out of scope.)
+every element. Nothing is written. (Turbopack's frame format is not handled in version 1;
+projects launched with it fall through to the describe box.)
 
 ## Delivery order
 
 | Step | Work | Parallel with |
 |------|------|---------------|
-| 1 | Source resolver + element locator (spike already passed on Daily Quest) | — |
+| 1 | Source resolver (three strategies) + element locator (spikes passed on Daily Quest and a Vite app) | Preview launcher |
 | 2a | Selection overlay (hover, select, report) | 2b, 2c |
 | 2b | Property list + Edit panel with text and colour (web, inspector kit) | 2a, 2c |
 | 2c | Edit helper: text and colour writes, safe-write checks, undo stack | 2a, 2b |
 | 3 | Wire 2a → 2b → 2c end to end; pencil toggle in the preview header | — |
 | 4 | Spacing, size, corners, resize handles | 5 |
 | 5 | Describe box + `selection` attachment on build turns | 4 |
-| 6 | Real-app acceptance on Daily Quest in Orion Staging | — |
+| 6 | Real-app acceptance: Daily Quest (Next.js) and a Vite + React app in Orion Staging | — |
 
 ## Testing
 
@@ -156,19 +177,24 @@ every element. Nothing is written. (Turbopack frames look different and are out 
 - **Overlay:** injected-script tests in a headless WebKit page.
 - **Mac:** build and `swift test`; a UI check that edit mode is disabled while a build is
   running.
-- **Acceptance (Step 6):** in Orion Staging, change Daily Quest's heading text and colour
+- **Acceptance (Step 6):** in Orion Staging, on both Daily Quest (Next.js) and a Vite + React app, change the heading text and colour
   on the Canvas, see the preview update, undo it, then send one described change and see
-  it arrive as a build turn with the screenshot attached.
+  it arrive as a build turn carrying the element's file, line and HTML.
 - All repo checks stay green: `pnpm build`, `lint`, `typecheck`, `test:workspace`,
   `check:astryx`, `swift test`.
 
 ## Open risks, stated plainly
 
-- The resolver depends on React 19 dev-mode `_debugStack` and Next's
-  `/__nextjs_original-stack-frames` endpoint. Both are internal; the plan pins a test
-  against Daily Quest's Next 15.5.0 so a future upgrade fails loudly.
+- The resolver depends on React dev-mode records (`_debugStack`, `_debugSource`) and, for
+  Next.js, on its `/__nextjs_original-stack-frames` endpoint. These are internal, so the
+  plan pins tests against Daily Quest (Next 15.5.0) and a Vite 8 + React 19 app so a future
+  upgrade fails loudly. Production builds have no such records; only dev servers are used.
+- Direct edits are React-only in version 1. Vue, Svelte, Angular and plain HTML get
+  preview, selection and the describe box. A project that serves several apps, needs
+  environment variables to start, or has no installed dependencies may not start; Orion
+  says why instead of showing an empty frame.
 - Values built from data (Daily Quest's greeting words, mapped lists) can't be edited
-  directly; those go to the describe box. Daily Quest uses plain CSS (`globals.css`) and a CSS module (`page.module.css`), which version 1 handles.
+  directly; those go to the describe box.
 - The Mac app's WebKit preview and the web board are separate surfaces; the selection
   has to cross the native bridge. If that proves laggy, the panel can move into the Mac
   app natively without changing the helper or the property list.
