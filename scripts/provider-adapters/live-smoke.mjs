@@ -36,15 +36,15 @@ const PROVIDER_TIMEOUT_MS = 120_000;
 // own tests are the authority on these values; the harness only has to agree.
 const PINNED = {
   codex: {
-    version: "0.146.0",
-    banner: "codex-cli 0.146.0",
+    version: "0.171.0",
+    banner: "codex-cli 0.171.0",
     model: "gpt-5.5",
     statusArgs: ["login", "status"],
     configVariable: "CODEX_HOME",
   },
   claude: {
-    version: "2.1.220",
-    banner: "2.1.220 (Claude Code)",
+    version: "2.1.331",
+    banner: "2.1.331 (Claude Code)",
     model: "claude-opus-4-8",
     statusArgs: ["auth", "status"],
     configVariable: "CLAUDE_CONFIG_DIR",

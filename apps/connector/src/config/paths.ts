@@ -19,6 +19,11 @@ export interface ConnectorPaths {
   runtimeStaging(version: string): string;
   runtimeDiscarded(version: string): string;
   downloadsDir: string;
+  engineRoot: string;
+  engineCurrent: string;
+  engineVersion(version: string): string;
+  engineHome: string;
+  engineExecutable: string;
   providersRoot: string;
   providerCurrent(provider: Provider): string;
   providerVersion(provider: Provider, version: string): string;
@@ -47,6 +52,8 @@ export function connectorPaths(home: string): ConnectorPaths {
   const launchLabel = "com.meld.agent";
   const runtimeRoot = path.join(root, "runtime");
   const runtimeCurrent = path.join(runtimeRoot, "current");
+  const engineRoot = path.join(root, "engine");
+  const engineCurrent = path.join(engineRoot, "current");
   const providersRoot = path.join(root, "providers");
   const stateDir = path.join(root, "state");
 
@@ -74,6 +81,11 @@ export function connectorPaths(home: string): ConnectorPaths {
     runtimeDiscarded: (version) =>
       path.join(runtimeRoot, "discarded", assertSafeVersion(version)),
     downloadsDir: path.join(root, "downloads"),
+    engineRoot,
+    engineCurrent,
+    engineVersion: (version) => path.join(engineRoot, "versions", assertSafeVersion(version)),
+    engineHome: path.join(engineRoot, "home"),
+    engineExecutable: path.join(engineCurrent, "node_modules", "t3", "bin", "t3.mjs"),
     providersRoot,
     providerCurrent: (provider) =>
       path.join(providersRoot, provider, "current"),

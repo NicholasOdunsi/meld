@@ -22,12 +22,18 @@ const validManifest = {
       },
     },
   },
+  engine: {
+    package: "t3",
+    version: "0.1.11",
+    integrity:
+      "sha512-LwGw1MBUrKJfqjTl/75QpAPbD3TBoyyPA8NgNrQh0yb0cQHGzoOBYuHcZa17rRcbLAULGCf9Bn/9ntEYUmxlLw==",
+  },
   providers: {
     codex: {
       package: "@openai/codex",
-      version: "0.146.0",
+      version: "0.171.0",
       integrity:
-        "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
+        "sha512-1IOFzL2Xg86tLdw6kDo3GoKbkQENgQi7TI6rlEvN132R7ngSw7SNOIQoTcnKzSZZ8kf9N9GynCweSoaFbqk2Eg==",
       models: [
         "gpt-5.6-terra",
         "gpt-5.6-sol",
@@ -39,9 +45,9 @@ const validManifest = {
     },
     claude: {
       package: "@anthropic-ai/claude-code",
-      version: "2.1.220",
+      version: "2.1.331",
       integrity:
-        "sha512-ogBrvwkqF9f8okmnXKxmRNHuvtFxFEffe5pWdqOV3iQDxlUOKirFqnyWC7NGXXnDA4WkkbPH8pvSbwyCR2Auyw==",
+        "sha512-E6IE7pon8YAtlzIBB0yhhQgopGvsYuSjnCaoP9ATw64T/f3I4ZfwVcj5jWV9yD7XkrSQZCwO7PgS+qMcP817gA==",
       models: [
         "claude-opus-4-8",
         "claude-sonnet-4-5",
@@ -75,12 +81,16 @@ describe("release manifest", () => {
     });
   });
 
+  it("pins the reviewed engine launcher", () => {
+    expect(RELEASES.engine).toEqual(validManifest.engine);
+  });
+
   it("pins both provider packages, versions, integrities, and models", () => {
     expect(RELEASES.providers.codex).toEqual({
       package: "@openai/codex",
-      version: "0.146.0",
+      version: "0.171.0",
       integrity:
-        "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
+        "sha512-1IOFzL2Xg86tLdw6kDo3GoKbkQENgQi7TI6rlEvN132R7ngSw7SNOIQoTcnKzSZZ8kf9N9GynCweSoaFbqk2Eg==",
       models: [
         "gpt-5.6-terra",
         "gpt-5.6-sol",
@@ -92,9 +102,9 @@ describe("release manifest", () => {
     });
     expect(RELEASES.providers.claude).toEqual({
       package: "@anthropic-ai/claude-code",
-      version: "2.1.220",
+      version: "2.1.331",
       integrity:
-        "sha512-ogBrvwkqF9f8okmnXKxmRNHuvtFxFEffe5pWdqOV3iQDxlUOKirFqnyWC7NGXXnDA4WkkbPH8pvSbwyCR2Auyw==",
+        "sha512-E6IE7pon8YAtlzIBB0yhhQgopGvsYuSjnCaoP9ATw64T/f3I4ZfwVcj5jWV9yD7XkrSQZCwO7PgS+qMcP817gA==",
       models: [
         "claude-opus-4-8",
         "claude-sonnet-4-5",
@@ -140,9 +150,9 @@ describe("release manifest", () => {
     for (const version of [
       "latest",
       "next",
-      "^0.146.0",
-      "~0.146.0",
-      ">=0.146.0",
+      "^0.171.0",
+      "~0.171.0",
+      ">=0.171.0",
       "0.146.x",
     ]) {
       expect(

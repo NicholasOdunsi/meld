@@ -100,9 +100,14 @@ const ClaudeReleaseSchema = ProviderReleaseSchema.extend({
   ),
 });
 
+const EngineReleaseSchema = z
+  .object({ package: z.literal("t3"), version: ExactVersionSchema, integrity: IntegritySchema })
+  .strict();
+
 export const ReleaseManifestSchema = z
   .object({
     node: NodeReleaseSchema,
+    engine: EngineReleaseSchema,
     providers: z
       .object({ codex: ProviderReleaseSchema, claude: ClaudeReleaseSchema })
       .strict(),
@@ -130,12 +135,18 @@ export const RELEASES = ReleaseManifestSchema.parse({
       },
     },
   },
+  engine: {
+    package: "t3",
+    version: "0.1.11",
+    integrity:
+      "sha512-LwGw1MBUrKJfqjTl/75QpAPbD3TBoyyPA8NgNrQh0yb0cQHGzoOBYuHcZa17rRcbLAULGCf9Bn/9ntEYUmxlLw==",
+  },
   providers: {
     codex: {
       package: "@openai/codex",
-      version: "0.146.0",
+      version: "0.171.0",
       integrity:
-        "sha512-yG3sPWNda/2YAIQIDq9MrrjoCTIQ7rxYM5IasrG3VBcuhCLTkgeg/JzqmJq1V98RE4MJ5jCxDXXQlOjrditFRw==",
+        "sha512-1IOFzL2Xg86tLdw6kDo3GoKbkQENgQi7TI6rlEvN132R7ngSw7SNOIQoTcnKzSZZ8kf9N9GynCweSoaFbqk2Eg==",
       // ChatGPT-authenticated Codex currently serves the GPT-5.6 family
       // (Terra/Sol/Luna). Keep gpt-5.5/gpt-5.4 for API-key sessions.
       models: [
@@ -149,9 +160,9 @@ export const RELEASES = ReleaseManifestSchema.parse({
     },
     claude: {
       package: "@anthropic-ai/claude-code",
-      version: "2.1.220",
+      version: "2.1.331",
       integrity:
-        "sha512-ogBrvwkqF9f8okmnXKxmRNHuvtFxFEffe5pWdqOV3iQDxlUOKirFqnyWC7NGXXnDA4WkkbPH8pvSbwyCR2Auyw==",
+        "sha512-E6IE7pon8YAtlzIBB0yhhQgopGvsYuSjnCaoP9ATw64T/f3I4ZfwVcj5jWV9yD7XkrSQZCwO7PgS+qMcP817gA==",
       models: [
         "claude-opus-4-8",
         "claude-sonnet-4-5",

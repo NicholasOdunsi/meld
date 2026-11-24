@@ -287,10 +287,10 @@ describe("provider installer", () => {
       args: [
         "install",
         "--prefix",
-        PATHS.providerVersion("codex", "0.146.0"),
+        PATHS.providerVersion("codex", "0.171.0"),
         "--save-exact",
         "--ignore-scripts=false",
-        "@openai/codex@0.146.0",
+        "@openai/codex@0.171.0",
       ],
     });
   });
@@ -305,10 +305,10 @@ describe("provider installer", () => {
       args: [
         "install",
         "--prefix",
-        PATHS.providerVersion("claude", "2.1.220"),
+        PATHS.providerVersion("claude", "2.1.331"),
         "--save-exact",
         "--ignore-scripts=false",
-        "@anthropic-ai/claude-code@2.1.220",
+        "@anthropic-ai/claude-code@2.1.331",
       ],
     });
   });
@@ -448,7 +448,7 @@ describe("provider installer", () => {
   it("rejects a lock resolved from somewhere other than the npm registry", async () => {
     const context = harness("codex", {
       lock: lockFile("codex", {
-        resolved: "https://evil.example.com/codex-0.146.0.tgz",
+        resolved: "https://evil.example.com/codex-0.171.0.tgz",
       }),
     });
 
@@ -530,7 +530,7 @@ describe("provider installer", () => {
     await expect(context.installer.install("claude")).rejects.toMatchObject({
       reason: "version-mismatch",
     });
-    expect(CLAUDE_VERSION).toBe("2.1.220");
+    expect(CLAUDE_VERSION).toBe("2.1.331");
   });
 
   it("accepts the real claude --version banner shape", async () => {
