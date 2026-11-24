@@ -390,6 +390,25 @@ and Codex (0.171.0) in the scratch home. The provider adapter self-test passed. 
 check covered installation and CLI version verification. Live inference with those
 pins remains an integration acceptance check.
 
+## Build Star integration checks
+
+- On a separate local Supabase stack, a clean migration reset passed all 1,407
+  pgTAP assertions. The Build mode cases covered authorized linking, replay-safe
+  task creation, lease fencing, approval authorization, and persisted settlement.
+- A replay crossed the real gateway WebSocket and connector. It linked a
+  scratch checkout, submitted a message as a room editor, replayed recorded T3
+  events, and verified the changed-files summary after the device disconnected.
+- A live Codex turn against T3 0.1.11 requested approval for a single file write.
+  After the runner approved that specific scratch change, the turn completed
+  and reported the new file. The starting Git checkout stayed clean. A second
+  run verified a public GitHub clone and code link.
+- The Claude turn reached T3 and its CLI replied that it needed a login. The
+  private GitHub publishing action was covered by the RPC tests. No new private
+  repository was published during this integration check.
+- The web component and Mac tests passed. The full Chromium room flow did not
+  complete in the isolated stack. Next.js exceeded the navigation deadline on
+  the room route, and the isolated Supabase API timed out during the retry.
+
 ## Not done / pending
 
 - **Step 8 (MCP fallback):** not needed, because RPC worked for Steps 5 and 6. For reference, `/mcp`
