@@ -73,6 +73,15 @@ describe("fromSourceMap", () => {
     expect(result?.file).toBe("src/App.tsx");
     expect(calls[1]).toBe("http://127.0.0.1:5333/src/App.tsx.map");
   });
+  it("never resolves to a dependency file, but still resolves the app's own source", async () => {
+    const el = element({ _debugStack: { stack: VITE_STACK } });
+    const dependency = { ...MAP, sources: ["webpack://app/./node_modules/lib/Button.js"] };
+    expect(await fromSourceMap(el, moduleFetch(inline(dependency)), ORIGIN)).toBeNull();
+    const linked = { ...MAP, sources: ["../../node_modules/.pnpm/lib@1.0.0/node_modules/lib/Button.js"] };
+    expect(await fromSourceMap(el, moduleFetch(inline(linked)), ORIGIN)).toBeNull();
+    const own = { ...MAP, sources: ["webpack://app/./src/App.tsx"] };
+    expect(await fromSourceMap(el, moduleFetch(inline(own)), ORIGIN)).toEqual({ file: "src/App.tsx", line: 5, column: 11 });
+  });
   it("is null when the module has no source map, the fetch fails, or the position is unmapped", async () => {
     const el = element({ _debugStack: { stack: VITE_STACK } });
     expect(await fromSourceMap(el, moduleFetch("export default 1;"), ORIGIN)).toBeNull();

@@ -72,7 +72,9 @@ export async function fromSourceMap(element: Element, fetchImpl: typeof fetch, o
     const original = originalPositionFor(new TraceMap(map as ConstructorParameters<typeof TraceMap>[0]), { line: frame.line, column: frame.column - 1 });
     if (original.source === null || original.line === null || original.column === null) return null;
     const file = projectPath(original.source, frame.url);
-    return file ? { file, line: original.line, column: original.column + 1 } : null;
+    // A library component's element decodes into its package; that is never a file the user can edit.
+    if (!file || file.split("/").includes("node_modules")) return null;
+    return { file, line: original.line, column: original.column + 1 };
   } catch {
     return null;
   }
