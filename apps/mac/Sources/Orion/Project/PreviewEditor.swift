@@ -9,6 +9,7 @@ struct PreviewPick: Decodable, Equatable {
     let text: String
     let html: String
     let computed: [String: String]
+    var elementId: Int? = nil
 }
 
 enum PreviewMessage: Equatable {
@@ -65,6 +66,7 @@ final class PreviewEditor {
     /// What the web panel renders. Encoded to JSON and pushed into the board.
     struct Selection: Codable, Equatable {
         var starId: String
+        var selectionId: String
         var label: String
         var tag: String
         var html: String
@@ -77,7 +79,7 @@ final class PreviewEditor {
         var pending: Bool
 
         private enum CodingKeys: String, CodingKey {
-            case starId, label, tag, html, fields, computed, reason, locked, canUndo, canRedo, pending
+            case starId, selectionId, label, tag, html, fields, computed, reason, locked, canUndo, canRedo, pending
         }
 
         /// The web panel's strict schema wants `fields`, `reason` and `locked` present (null when empty);
@@ -85,6 +87,7 @@ final class PreviewEditor {
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(starId, forKey: .starId)
+            try container.encode(selectionId, forKey: .selectionId)
             try container.encode(label, forKey: .label)
             try container.encode(tag, forKey: .tag)
             try container.encode(html, forKey: .html)
@@ -115,14 +118,17 @@ final class PreviewEditor {
 
     private(set) var starID: String?
     private(set) var selection: Selection?
-    var isActive: Bool { starID != nil }
+    var needsBoardExchange: Bool { starID != nil || lastPushed != .some(nil) }
 
     private let helper: any PreviewEditRunning
     private let root: (String) -> URL?
     private let lockReason: (String) -> String?
-    private let send: (String, String) async -> Bool
+    private let send: @MainActor (String, String) async -> Bool
     private var source: PreviewSource?
     private var pick: PreviewPick?
+    private var selectionID = UUID().uuidString
+    private var lastPushed: String??
+    @ObservationIgnored private var boardRequestBatch: Task<Void, Never>?
     private var histories: [String: PreviewEditHistory] = [:]
     /// Every helper call (inspect, apply, restore) takes its turn on this one chain, so they never overlap.
     private var writeTail: Task<Void, Never>?
@@ -131,7 +137,7 @@ final class PreviewEditor {
     init(helper: any PreviewEditRunning,
          root: @escaping (String) -> URL?,
          lockReason: @escaping (String) -> String?,
-         send: @escaping (_ body: String, _ starID: String) async -> Bool) {
+         send: @escaping @MainActor (_ body: String, _ starID: String) async -> Bool) {
         self.helper = helper; self.root = root; self.lockReason = lockReason; self.send = send
     }
 
@@ -148,6 +154,7 @@ final class PreviewEditor {
     private func clearSelection() {
         generation += 1
         selection = nil; source = nil; pick = nil
+        selectionID = UUID().uuidString
     }
 
     /// Runs `work` after everything queued before it. Callers capture what the work needs when they
@@ -174,7 +181,15 @@ final class PreviewEditor {
         switch message {
         case .cleared: clearSelection()
         case .picked(let next):
-            self.generation += 1
+            if next.elementId == nil || next.elementId != pick?.elementId {
+                clearSelection()
+            } else if next == pick {
+                return
+            } else if next.src != source {
+                // The same DOM element survived a recompilation but its source moved.
+                // Invalidate operations already queued against the previous location.
+                self.generation += 1
+            }
             let mine = self.generation
             pick = next; source = next.src
             enqueue { [weak self] in await self?.inspect(next, starID: starID, generation: mine) }
@@ -197,7 +212,10 @@ final class PreviewEditor {
     }
 
     /// Lets tests (and the exchange loop) wait for the work queued so far.
-    func settle() async { await writeTail?.value }
+    func settle() async {
+        await boardRequestBatch?.value
+        await writeTail?.value
+    }
 
     func handle(_ request: PreviewRequest) async {
         guard let starID else { return }
@@ -207,7 +225,11 @@ final class PreviewEditor {
         case .undo, .redo:
             let undo = request == .undo
             await enqueue { [weak self] in await self?.replay(undo: undo, starID: starID) }.value
-        case .describe(let text): await describe(text, starID: starID)
+        case .describe(let text):
+            await enqueue { [weak self] in
+                guard let self, self.isCurrent(starID, generation), self.lockReason(starID) == nil else { return }
+                await self.describe(text, starID: starID)
+            }.value
         case .tweak(let field, let value, let index):
             guard let src = source else { return }
             await enqueue { [weak self] in
@@ -217,8 +239,51 @@ final class PreviewEditor {
     }
 
     func snapshotJSON() -> String? {
-        guard let selection, let data = try? JSONEncoder().encode(selection) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard let selection, let data = try? encoder.encode(selection) else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    func resetBoardExchange() { lastPushed = nil }
+
+    /// Synchronize with the current board mount. Each request is bound to the pick the panel displayed.
+    func exchange(_ evaluate: (_ script: String, _ arguments: [String: Any]) async -> Any?) async {
+        if let starID, let current = selection {
+            let reason = lockReason(starID)
+            if current.locked != reason { selection?.locked = reason }
+        }
+        let json = snapshotJSON()
+        if lastPushed != .some(json) {
+            let sent = await evaluate(
+                """
+                const bridge = window.__orionPreviewEdit;
+                if (!bridge) return false;
+                bridge.setSelection(json);
+                return true;
+                """,
+                ["json": json.map { $0 as Any } ?? NSNull()]
+            )
+            guard !Task.isCancelled, sent as? Bool == true else { return }
+            lastPushed = .some(json)
+        }
+        // Keep polling while a request is running so the board can display its pending state.
+        guard boardRequestBatch == nil else { return }
+        guard let requests = await evaluate("return window.__orionPreviewEdit?.take()", [:]) as? [[String: Any]] else {
+            lastPushed = nil
+            return
+        }
+        guard !Task.isCancelled, !requests.isEmpty else { return }
+        boardRequestBatch = Task { [weak self] in
+            guard let self else { return }
+            defer { self.boardRequestBatch = nil }
+            for object in requests {
+                if let selection = self.selection, object["selectionId"] as? String == selection.selectionId,
+                   let request = PreviewRequest(json: object) {
+                    await self.handle(request)
+                }
+            }
+        }
     }
 
     // MARK: Helper calls
@@ -243,8 +308,16 @@ final class PreviewEditor {
 
     private func fields(from reply: [String: Any]) -> [String: FieldState]? {
         guard let object = reply["fields"], JSONSerialization.isValidJSONObject(object),
-              let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
-        return try? JSONDecoder().decode([String: FieldState].self, from: data)
+              let data = try? JSONSerialization.data(withJSONObject: object),
+              let fields = try? JSONDecoder().decode([String: FieldState].self, from: data) else { return nil }
+        return fields.mapValues { field in
+            // Keep the rest of the inspector available for a literal too large for an input.
+            guard (field.value?.utf16.count ?? 0) <= 2_000, (field.runs?.count ?? 0) <= 8,
+                  field.runs?.allSatisfy({ $0.utf16.count <= 2_000 }) ?? true else {
+                return FieldState(editable: false, value: nil, runs: nil)
+            }
+            return field
+        }
     }
 
     private func changes(from reply: [String: Any]) -> [PreviewEditChange]? {
@@ -265,7 +338,7 @@ final class PreviewEditor {
     private func publish(fields: [String: FieldState]?, reason: String?, starID: String, pending: Bool = false) {
         guard let pick else { return }
         let history = histories[starID] ?? PreviewEditHistory()
-        selection = Selection(starId: starID, label: pick.tag, tag: pick.tag, html: pick.html, fields: fields,
+        selection = Selection(starId: starID, selectionId: selectionID, label: pick.tag, tag: pick.tag, html: pick.html, fields: fields,
                               computed: pick.computed, reason: reason, locked: lockReason(starID),
                               canUndo: history.canUndo, canRedo: history.canRedo, pending: pending)
     }
@@ -315,6 +388,7 @@ final class PreviewEditor {
         guard self.starID == starID, lockReason(starID) == nil, let root = root(starID) else { return }
         let history = histories[starID] ?? PreviewEditHistory()
         guard let changes = undo ? history.nextUndo() : history.nextRedo() else { return }
+        publish(fields: selection?.fields, reason: nil, starID: starID, pending: true)
         let files = changes.map { change in
             ["path": change.path, "expect": undo ? change.after : change.before, "contents": undo ? change.before : change.after]
         }
@@ -326,7 +400,9 @@ final class PreviewEditor {
         // Writes are serialised, so the stacks are as we read them; mutate in place after the await.
         if undo { histories[starID, default: PreviewEditHistory()].didUndo() }
         else { histories[starID, default: PreviewEditHistory()].didRedo() }
-        if self.starID == starID { publish(fields: selection?.fields, reason: nil, starID: starID) }
+        if self.starID == starID, let pick {
+            await inspect(pick, starID: starID, generation: generation)
+        }
     }
 
     private func describe(_ text: String, starID: String) async {
@@ -338,6 +414,13 @@ final class PreviewEditor {
         let styles = pick.computed.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")
         if !styles.isEmpty { lines.append("Styles: \(styles)") }
         lines.append("Request: \(request)")
-        _ = await send(String(lines.joined(separator: "\n").prefix(10_000)), starID)
+        let generation = self.generation
+        publish(fields: selection?.fields, reason: nil, starID: starID, pending: true)
+        if await send(String(lines.joined(separator: "\n").prefix(10_000)), starID),
+           isCurrent(starID, generation) {
+            stop()
+        } else if isCurrent(starID, generation) {
+            publish(fields: selection?.fields, reason: "Orion couldn't send this build request.", starID: starID)
+        }
     }
 }

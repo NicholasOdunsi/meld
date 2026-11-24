@@ -71,18 +71,20 @@ struct PreviewEditorTests {
         let editor = editor(helper)
         await picked(editor, helper: helper)
         helper.replies = [reply("{\"ok\":true,\"fields\":\(Self.fieldsJSON),\"changes\":[{\"path\":\"app/page.tsx\",\"before\":\"A\",\"after\":\"B\"}]}"),
-                          reply("{\"ok\":true,\"changes\":[{\"path\":\"app/page.tsx\",\"before\":\"B\",\"after\":\"A\"}]}")]
+                          reply("{\"ok\":true,\"changes\":[{\"path\":\"app/page.tsx\",\"before\":\"B\",\"after\":\"A\"}]}"),
+                          reply("{\"ok\":true,\"fields\":\(Self.fieldsJSON),\"changes\":[]}")]
         await editor.handle(.tweak(field: "color", value: "#ff0000", index: nil))
         #expect(helper.requests.last?["op"] as? String == "apply")
         #expect(editor.selection?.canUndo == true)
         await editor.handle(.undo)
-        let restore = helper.requests.last
+        let restore = helper.requests.dropLast().last
         #expect(restore?["op"] as? String == "restore")
         let file = (restore?["files"] as? [[String: Any]])?.first
         #expect(file?["expect"] as? String == "B")
         #expect(file?["contents"] as? String == "A")
         #expect(editor.selection?.canUndo == false)
         #expect(editor.selection?.canRedo == true)
+        #expect(helper.requests.last?["op"] as? String == "inspect")
     }
 
     @Test func editsAreRefusedWhileTheBuildIsRunning() async {
@@ -124,7 +126,7 @@ struct PreviewEditorTests {
         #expect(json.contains("\"locked\":null"))
         #expect(json.contains("\"value\":null"))
         let object = try #require(snapshotObject(editor))
-        #expect(Set(object.keys) == ["starId", "label", "tag", "html", "fields", "computed", "reason", "locked",
+        #expect(Set(object.keys) == ["starId", "selectionId", "label", "tag", "html", "fields", "computed", "reason", "locked",
                                      "canUndo", "canRedo", "pending"])
         let fields = try #require(object["fields"] as? [String: [String: Any]])
         #expect(fields["color"].map { Set($0.keys) } == ["editable", "value"])
@@ -262,6 +264,8 @@ struct PreviewEditorTests {
         await second.value
         await waitFor(helper, requests: 4)
         helper.answer("{\"ok\":true,\"changes\":[]}")
+        await waitFor(helper, requests: 5)
+        helper.answer("{\"ok\":true,\"fields\":\(Self.fieldsJSON),\"changes\":[]}")
         await undo.value
         let file = (helper.requests[3]["files"] as? [[String: Any]])?.first
         #expect(helper.requests[3]["op"] as? String == "restore")
@@ -269,5 +273,50 @@ struct PreviewEditorTests {
         #expect(file?["contents"] as? String == "B")
         #expect(gated.selection?.canUndo == true)
         #expect(gated.selection?.canRedo == true)
+    }
+
+    @Test func exchangeAppliesOnlyRequestsForTheCurrentPick() async throws {
+        let helper = FakeHelper()
+        let editor = editor(helper)
+        await picked(editor, helper: helper)
+        let selectionID = try #require(editor.selection?.selectionId)
+        helper.replies = [reply(applyReply("A", "B"))]
+        await editor.exchange { script, _ in
+            if script.contains("setSelection") { return true }
+            return [
+                ["kind": "tweak", "field": "color", "value": "#000000", "selectionId": "old"],
+                ["kind": "tweak", "field": "color", "value": "#ff0000", "selectionId": selectionID]
+            ]
+        }
+        await editor.settle()
+        #expect(helper.requests.count == 2)
+        #expect((helper.requests.last?["tweak"] as? [String: Any])?["value"] as? String == "#ff0000")
+    }
+
+    @Test func exchangeSendsOneSnapshotAndClearsItOnStop() async {
+        let helper = FakeHelper()
+        let editor = editor(helper)
+        await picked(editor, helper: helper)
+        var pushed: [Any] = []
+        for _ in 0..<3 {
+            await editor.exchange { script, arguments in
+                if script.contains("setSelection"), let json = arguments["json"] {
+                    pushed.append(json)
+                    return true
+                }
+                return []
+            }
+        }
+        #expect(pushed.count == 1)
+        editor.stop()
+        await editor.exchange { script, arguments in
+            if script.contains("setSelection"), let json = arguments["json"] {
+                pushed.append(json)
+                return true
+            }
+            return []
+        }
+        #expect(pushed.count == 2)
+        #expect(pushed.last is NSNull)
     }
 }
