@@ -29,11 +29,13 @@ final class BuildPreview {
         return URL.applicationSupportDirectory.appending(path: "Meld", directoryHint: .isDirectory)
     }
 
+    var nodeURL: URL { meldRoot.appending(path: "runtime/current/bin/node") }
+
     private var isStaging: Bool {
         Bundle.main.object(forInfoDictionaryKey: "OrionPreview") as? Bool == true
     }
 
-    private func worktree(for starID: String) -> URL? {
+    func worktree(for starID: String) -> URL? {
         guard let id = UUID(uuidString: starID) else { return nil }
         let record = meldRoot.appending(path: "engine/previews/\(id.uuidString.lowercased()).json")
         struct PreviewRecord: Decodable { let worktree: String }
@@ -67,7 +69,7 @@ final class BuildPreview {
         startingStarID = id
         defer { startingStarID = nil }
         let child = Process()
-        child.executableURL = meldRoot.appending(path: "runtime/current/bin/node")
+        child.executableURL = nodeURL
         child.arguments = ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)]
         child.currentDirectoryURL = folder
         child.standardInput = FileHandle.nullDevice
