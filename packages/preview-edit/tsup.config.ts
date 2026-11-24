@@ -22,4 +22,14 @@ export default defineConfig([
       ].join("\n"),
     },
   },
+  {
+    entry: { overlay: "src/overlay.ts" },
+    format: ["iife"],
+    platform: "browser",
+    target: "es2020",
+    outDir: out,
+    clean: false,
+    minify: true,
+    outExtension: () => ({ js: ".js" }),
+  },
 ]);
