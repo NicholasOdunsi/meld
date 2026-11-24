@@ -28,6 +28,19 @@ struct StreamBuildSummary: View {
             }
             if failed { Text("Could not send that approval. Try again.").font(.caption) }
             if let reply = build.reply, !reply.isEmpty { Text(reply).textSelection(.enabled) }
+            if frame.buildPreview.canPreview(starID) {
+                Button(frame.buildPreview.startingStarID == starID ? "Starting Preview…" : "Preview in Canvas") {
+                    Task { await frame.previewBuildInCanvas(starID) }
+                }
+                .disabled(frame.buildPreview.starting)
+                Button("Open in Browser") {
+                    Task { await frame.openBuildInBrowser(starID) }
+                }
+                .disabled(frame.buildPreview.starting)
+                if let failure = frame.buildPreview.failure, failure.starID == starID {
+                    Text(failure.message).font(.caption)
+                }
+            }
             ForEach(build.files) { file in
                 HStack {
                     Text(file.path).lineLimit(1)

@@ -62,10 +62,24 @@ describe("build projection", () => {
       kind: "event", sequence: 1,
       event: { type: "message.updated", payload: {
         id: "reply", runId: run(1), role: "assistant", streaming: false,
-        text: `See [file](${encodeURI(worktrees)}/example.ts) or /Users/ada/other/example.ts`,
+        text: `Overview: ${"repository detail. ".repeat(300)}See [example.ts](${encodeURI(worktrees)}/example.ts) or /Users/ada/other/example.ts`,
       } },
     });
     expect(projection.reply).not.toContain("/Users/ada/");
-    expect(projection.reply).toContain("example.ts");
+    expect(projection.reply).toMatch(/^Overview:/);
+    expect(projection.reply).toContain("See example.ts or [local path]");
+  });
+
+  it("explains a failed run in Meld's words without quoting the provider", () => {
+    const projection = new BuildProjection(run(1));
+    projection.read({ kind: "event", sequence: 1, event: { type: "turn-item.updated", payload: {
+      runId: run(1), type: "error", status: "failed",
+      failure: { class: "usage_limit", message: "Visit https://chatgpt.com/secret", resetAt: "2026-11-24T18:05:00.000Z" },
+    } } });
+    projection.read({ kind: "event", sequence: 2, event: { type: "run.updated", payload: { id: run(1), ordinal: 1, status: "failed" } } });
+    expect(projection.terminal?.status).toBe("failed");
+    expect(projection.reply).toContain("reached its usage limit");
+    expect(projection.reply).toContain("resets around");
+    expect(projection.reply).not.toContain("chatgpt.com");
   });
 });

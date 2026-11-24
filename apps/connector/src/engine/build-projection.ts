@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { BUILD_STEP_MIN_INTERVAL_MS, MAX_BUILD_CHANGED_FILES, ChangedFileSchema, type BuildEvent, type BuildStatus, type ChangedFile } from "@meld/contracts";
 import { z } from "zod";
-import { redactDiagnostic } from "../providers/provider-installer";
+import { redactSecrets } from "../providers/provider-installer";
 
 const RunSchema = z.object({
   id: z.string(),
@@ -15,6 +15,7 @@ const TurnItemSchema = z.object({
   status: z.string(),
   requestId: z.string().optional(),
   prompt: z.string().nullable().optional(),
+  failure: z.object({ class: z.string(), resetAt: z.string().nullish() }).nullish(),
 });
 const MessageSchema = z.object({
   id: z.string(),
@@ -23,7 +24,7 @@ const MessageSchema = z.object({
   text: z.string(),
   streaming: z.boolean(),
 });
-const ThreadSchema = z.object({ branch: z.string().nullable() });
+const ThreadSchema = z.object({ branch: z.string().nullable(), worktreePath: z.string().nullish() });
 const CheckpointSchema = z.object({
   runId: z.string().nullable(),
   files: z.array(z.object({
@@ -81,6 +82,7 @@ export class BuildProjection {
   private lastApproval: string | undefined;
   private branch: string | undefined;
   private lastStepAt = -Infinity;
+  private failure: TurnItem["failure"];
 
   constructor(
     private readonly runId: string,
@@ -88,8 +90,27 @@ export class BuildProjection {
     private readonly localPaths: readonly string[] = [],
   ) {}
 
+  worktreePath?: string;
+
   get reply(): string {
-    return [...this.replies.values()].join("\n\n").slice(0, 100_000);
+    const failure = this.failureNote();
+    return [...this.replies.values(), ...(failure ? [failure] : [])].join("\n\n").slice(0, 100_000);
+  }
+
+  /** Meld's own words: the provider's error text can quote local details. */
+  private failureNote(): string | undefined {
+    if (this.terminal?.status !== "failed" || !this.failure) return undefined;
+    const reset = this.failure.resetAt ? new Date(this.failure.resetAt) : undefined;
+    const when = reset && !Number.isNaN(reset.getTime())
+      ? ` It resets around ${reset.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}.` : "";
+    switch (this.failure.class) {
+      case "usage_limit":
+        return `This build stopped because the selected AI agent has reached its usage limit.${when} Try again after it resets, or start the build with another agent.`;
+      case "auth": case "authentication": case "unauthenticated":
+        return "This build stopped because the selected AI agent is not signed in on this Mac. Sign in, then try again.";
+      default:
+        return "This build stopped because the selected AI agent reported an error. Try again.";
+    }
   }
 
   read(packet: unknown): BuildEvent[] {
@@ -98,6 +119,7 @@ export class BuildProjection {
       if (snapshot.data.snapshotSequence < this.sequence) return [];
       this.sequence = snapshot.data.snapshotSequence;
       const { projection } = snapshot.data;
+      this.worktreePath = projection.thread.worktreePath ?? undefined;
       const events = this.readBranch(projection.thread.branch);
       this.requests.clear();
       this.approvalItems.clear();
@@ -121,7 +143,9 @@ export class BuildProjection {
     switch (type) {
       case "thread.updated": {
         const thread = ThreadSchema.safeParse(payload);
-        return thread.success ? this.readBranch(thread.data.branch) : [];
+        if (!thread.success) return [];
+        if (thread.data.worktreePath !== undefined) this.worktreePath = thread.data.worktreePath ?? undefined;
+        return this.readBranch(thread.data.branch);
       }
       case "run.created":
       case "run.updated": {
@@ -180,6 +204,7 @@ export class BuildProjection {
   }
 
   private rememberApprovalItem(item: TurnItem): void {
+    if (item.runId === this.runId && item.type === "error" && item.failure) this.failure = item.failure;
     if (item.runId === this.runId && item.type === "approval_request" && item.requestId) {
       this.approvalItems.set(item.requestId, item);
     }
@@ -207,7 +232,9 @@ export class BuildProjection {
     for (const localPath of this.localPaths) {
       text = text.replaceAll(localPath, "[local path]").replaceAll(encodeURI(localPath), "[local path]");
     }
-    return redactDiagnostic(text.replace(/(^|[\s='"(])\/[\w./@~+-]+/g, "$1[local path]"));
+    // A local Markdown link has no usable target in Orion's hosted summary.
+    text = text.replace(/\[([^\]\n]+)\]\((?:\[local path\]|file:\/\/|\/)[^\n)]*\)/g, "$1");
+    return redactSecrets(text.replace(/(^|[\s='"(])\/[\w./@~+-]+/g, "$1[local path]"));
   }
 
   private readStep(item: TurnItem): BuildEvent[] {

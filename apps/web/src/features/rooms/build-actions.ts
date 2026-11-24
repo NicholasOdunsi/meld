@@ -9,6 +9,15 @@ import { listDevices } from "@/features/ai/device-service";
 import { createClient } from "@/lib/supabase/server";
 
 const Target = z.object({ roomId: z.uuid(), provider: z.enum(["claude", "codex"]).nullish(), model: z.string().trim().min(1).max(100).nullish() });
+const CodeLinkInput = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null || !("kind" in value) || value.kind !== "github"
+    || !("repository" in value) || typeof value.repository !== "string") {
+    return value;
+  }
+  const repository = value.repository.trim();
+  const url = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/?$/i.exec(repository);
+  return { ...value, repository: url ? url[1]!.replace(/\.git$/i, "") : repository };
+}, CodeLinkTargetSchema);
 const CodeLinkRow = z.object({ device_id: z.uuid(), display_name: z.string() });
 const BuildRow = z.object({
   star_task_id: z.uuid(),
@@ -64,7 +73,7 @@ export async function readRoomBuilds(room: unknown) {
 }
 
 export async function enqueueCodeLink(value: unknown) {
-  const input = Target.extend({ deviceId: z.uuid().optional(), target: CodeLinkTargetSchema }).parse(value);
+  const input = Target.extend({ deviceId: z.uuid().optional(), target: CodeLinkInput }).parse(value);
   const supabase = await createClient(new Headers());
   const readiness = await resolveAgentReadiness(supabase);
   const deviceId = input.deviceId ?? (readiness.ready ? readiness.defaultDeviceId : null);

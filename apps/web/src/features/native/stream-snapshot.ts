@@ -101,7 +101,8 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     const metadata = metadataByTask.get(task.taskId);
     return [{ id: task.taskId, sourceMessageId: task.sourceMessageId, title: metadata?.title ?? title, status,
       constellation: metadata?.constellation ?? null, createdAt: task.createdAt,
-      followupMessageIds: metadata?.followupMessageIds ?? [], ...(build ? { build } : {}) }];
+      followupMessageIds: metadata?.followupMessageIds ?? [], ...(build ? { build: { ...build, step: build.status === "done" ? "Completed"
+        : build.status === "failed" ? "Build failed" : build.status === "cancelled" ? "Cancelled" : build.step } } : {}) }];
   });
 
   let send: StreamSend;

@@ -209,6 +209,10 @@ export class BuildTaskRunner {
             }
             for (const event of projection.read(item)) emit(event);
             if (projection.terminal) {
+              if (projection.terminal.status === "done" && projection.worktreePath) {
+                const preview = path.join(this.deps.paths.engineRoot, "previews", `${threadId}.json`);
+                await this.write(preview, { worktree: projection.worktreePath }).catch(() => {});
+              }
               if (projection.reply) emit({ type: "reply", text: projection.reply });
               emit({ type: "changed_files", files: projection.changedFiles });
               return projection.terminal.status;
@@ -266,7 +270,7 @@ export class BuildTaskRunner {
     return schema.parse(JSON.parse(await this.deps.fileSystem.readText(file)));
   }
 
-  private async write(file: string, value: LocalProject | LocalTurn): Promise<void> {
+  private async write(file: string, value: LocalProject | LocalTurn | { worktree: string }): Promise<void> {
     const { fileSystem } = this.deps;
     const temporary = `${file}.${randomUUID()}.tmp`;
     await fileSystem.makeDirectory(path.dirname(file));

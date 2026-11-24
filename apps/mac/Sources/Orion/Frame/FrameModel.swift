@@ -13,6 +13,41 @@ import UniformTypeIdentifiers
 final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
+    let buildPreview = BuildPreview()
+    struct CanvasPreview: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let url: URL
+    }
+
+    private var previewStars: [String: [String: String]] = [:]
+    private(set) var canvasPreviewFocus: (starID: String, requestID: UUID)?
+
+    var canvasPreviews: [CanvasPreview] {
+        guard projectPanel == .canvas, let room = snapshot?.currentRoomID,
+              let stars = previewStars[room] else { return [] }
+        return stars.keys.sorted().compactMap { id in
+            guard let url = buildPreview.runningURL(for: id), let title = stars[id] else { return nil }
+            return CanvasPreview(id: id, title: title, url: url)
+        }
+    }
+
+    func previewBuildInCanvas(_ starID: String) async {
+        guard let stream = visibleStream, let star = stream.stars.first(where: { $0.id == starID }) else { return }
+        guard await buildPreview.start(starID) != nil else { return }
+        previewStars[stream.roomID, default: [:]][starID] = star.title
+        guard snapshot?.currentRoomID == stream.roomID else { return }
+        if projectPanel != .canvas { togglePanel(.canvas) }
+        canvasStarID = starID
+        canvasScreenID = nil
+        canvasPreviewFocus = (starID, UUID())
+    }
+
+    func openBuildInBrowser(_ starID: String) async {
+        guard let url = await buildPreview.start(starID) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     var projectPanel: ProjectPanel?
     var isCanvasExpanded = false
     private(set) var canvasStarID: String?
@@ -153,6 +188,7 @@ final class FrameModel {
     /// Constellations, so the Constellations icon while a Star is open goes
     /// back to the list rather than closing the panel.
     func togglePanel(_ panel: ProjectPanel) {
+        canvasPreviewFocus = nil
         let next: ProjectPanel? = projectPanel == panel ? nil : panel
         let enteringCanvasFromStar = next == .canvas && projectPanel == .star ? openStarID : nil
         if projectPanel == .canvas, next != .canvas {
@@ -183,6 +219,7 @@ final class FrameModel {
     func openStar(_ id: String) {
         guard visibleStream?.stars.contains(where: { $0.id == id }) == true else { return }
         if projectPanel == .canvas {
+            canvasPreviewFocus = nil
             canvasStarID = id
             canvasScreenID = nil
             return
@@ -202,11 +239,13 @@ final class FrameModel {
 
     func showProjectCanvas() {
         guard projectPanel == .canvas else { return }
+        canvasPreviewFocus = nil
         canvasStarID = nil
         canvasScreenID = nil
     }
 
     func openScreenInCanvas(_ id: String) {
+        canvasPreviewFocus = nil
         if projectPanel != .canvas { togglePanel(.canvas) }
         canvasStarID = nil
         canvasScreenID = id
@@ -417,6 +456,9 @@ final class FrameModel {
 
     /// Signed out (or on a page outside Orion's frame): hide the sidebar.
     func pageDidLeaveFrame() {
+        buildPreview.stop()
+        previewStars.removeAll()
+        canvasPreviewFocus = nil
         snapshot = nil
         pendingDestination = nil
         stream = nil

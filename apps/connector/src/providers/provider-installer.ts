@@ -88,12 +88,15 @@ const SECRET_SHAPES: [RegExp, string][] = [
 ];
 
 /** Redacts secret-shaped tokens and keeps only the tail of what remains. */
-export function redactDiagnostic(value: string): string {
-  const redacted = SECRET_SHAPES.reduce(
+export function redactSecrets(value: string): string {
+  return SECRET_SHAPES.reduce(
     (text, [shape, replacement]) => text.replaceAll(shape, replacement),
     value,
   );
+}
 
+export function redactDiagnostic(value: string): string {
+  const redacted = redactSecrets(value);
   return redacted.length > MAX_DIAGNOSTIC_CHARS
     ? `…${redacted.slice(redacted.length - MAX_DIAGNOSTIC_CHARS)}`
     : redacted;
