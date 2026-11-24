@@ -255,4 +255,28 @@ describe("buildStreamSnapshot", () => {
     });
     expect(snapshot.screens.map((screen) => [screen.id, screen.state])).toEqual([["s3", "failed"]]);
   });
+  it("attaches a screen to the Star whose reply proposed it", () => {
+    const row = (id: string, sourceMessageId: string | null) => ({
+      id, name: id, state: "built" as const, updating: false, currentVersionId: `v-${id}`,
+      formFactor: "desktop" as const, createdAt: "2026-11-15T10:00:00.000Z", sourceMessageId,
+    });
+    const snapshot = buildStreamSnapshot({
+      ...base,
+      messages: [
+        message({ id: "q1", body: "design a dashboard" }),
+        message({ id: "a1", authorType: "product_agent", authorId: null, aiTaskId: "t1", body: "On it" }),
+        message({ id: "q2", body: "make it darker" }),
+        message({ id: "a2", authorType: "product_agent", authorId: null, aiTaskId: "t2", body: "Darker" }),
+      ],
+      taskStatuses: [
+        task({ taskId: "t1", sourceMessageId: "q1" }),
+        task({ taskId: "t2", sourceMessageId: "q2" }),
+      ],
+      starMetadata: [{ taskId: "t1", title: "Dashboard", constellation: null, followupMessageIds: ["q2"] }],
+      screenRows: [row("from-star", "a1"), row("from-followup", "a2"), row("no-source", null), row("unknown", "missing")],
+    });
+    expect(snapshot.screens.map((screen) => [screen.id, screen.starId])).toEqual([
+      ["from-star", "t1"], ["from-followup", "t1"], ["no-source", null], ["unknown", null],
+    ]);
+  });
 });

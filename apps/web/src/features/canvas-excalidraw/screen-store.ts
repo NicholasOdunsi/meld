@@ -1,4 +1,4 @@
-export type Screen = { id: string; rev: number; html: string };
+export type Screen = { id: string; rev: number; html: string; snapshot?: true };
 
 export type ScreenStore = {
   get(id: string): Screen | undefined;

@@ -1,0 +1,51 @@
+import { describe, expect, it } from "vitest";
+import { FIELDS } from "@meld/screen-runtime/edit/types";
+import { handleSourceRequest } from "./compile-protocol";
+const files = { "index.html": '<b data-goto="next">Hi</b>' };
+const src = `index.html:0:${files['index.html'].length}`;
+describe('source worker protocol', () => {
+  it('dispatches compile, inspect, tweak and links through one protocol', () => {
+    expect(handleSourceRequest({id:0,op:'compile',source:{kind:'html',entry:'index.html',files},tagElements:true})).toMatchObject({id:0,op:'compile',result:{ok:true}});
+    expect(handleSourceRequest({id:1,op:'inspect',files,src})).toMatchObject({id:1,op:'inspect',result:{text:{editable:true,value:'Hi'}}});
+    expect(handleSourceRequest({id:2,op:'tweak',files,src,tweak:{field:'text',value:'New'}})).toMatchObject({id:2,op:'tweak',result:{ok:true,files:{'index.html':'<b data-goto="next">New</b>'}}});
+    expect(handleSourceRequest({id:3,op:'links',files})).toEqual({id:3,op:'links',result:['next']});
+  });
+  it.each([
+    {id:1,op:'compile',source:{},tagElements:true},
+    {id:1,op:'inspect',files,src,extra:true},
+    {id:1,op:'inspect',files,src:''},
+    {id:1,op:'tweak',files,src,tweak:{field:'bad',value:'x'}},
+    {id:1,op:'tweak',files,src,tweak:{field:'text',value:'x'.repeat(262145)}},
+    {id:1,op:'links',files:{}},
+  ])('returns explicit failures for invalid requests with a valid identity', req => {
+    expect(handleSourceRequest(req)).toMatchObject({id:1,op:req.op,error:expect.any(String)});
+  });
+  it.each([null,{}, {id:'x',op:'links',files}, {id:-1,op:'links',files},{id:9007199254740992,op:'links',files}])('ignores invalid request identities', req => expect(handleSourceRequest(req)).toBeNull());
+});
+
+it('bounds source identity and strict nested tweak shape',()=>{
+  expect(handleSourceRequest({id:5,op:'inspect',files,src:'x'.repeat(156)})).toMatchObject({id:5,op:'inspect',error:expect.any(String)});
+  expect(handleSourceRequest({id:6,op:'tweak',files,src,tweak:{field:'text',value:'',extra:true}})).toMatchObject({id:6,op:'tweak',error:expect.any(String)});
+  expect(handleSourceRequest({id:7,op:'tweak',files,src,tweak:{field:'text',value:''}})).toMatchObject({id:7,op:'tweak',result:{ok:true}});
+});
+
+it('takes a whole run index from 0 to 7 on text only, and edits that run',()=>{
+  const hero={'index.html':'<h1>RIDE<br>BEYOND<br><span>LIMITS.</span></h1>'};
+  const at=`index.html:0:${hero['index.html'].length}`;
+  expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'text',value:'FURTHER',index:1}})).toEqual({id:9,op:'tweak',result:{ok:true,files:{'index.html':'<h1>RIDE<br>FURTHER<br><span>LIMITS.</span></h1>'}}});
+  // In the schema's range but not a run of this element: the editor declines it.
+  expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'text',value:'x',index:7}})).toEqual({id:9,op:'tweak',result:{ok:false,reason:'not-literal'}});
+  for (const index of [1.5,-1,8,'1',null,Number.NaN])
+    expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'text',value:'x',index}}),String(index)).toMatchObject({id:9,op:'tweak',error:expect.any(String)});
+  expect(handleSourceRequest({id:9,op:'tweak',files:hero,src:at,tweak:{field:'width',value:'8',index:0}})).toMatchObject({id:9,op:'tweak',error:expect.any(String)});
+});
+
+it.each([{id:8,op:'unknown'}, {id:8}])('settles identifiable malformed operations',req=>{
+  expect(handleSourceRequest(req)).toEqual({id:8,op:'compile',error:'Invalid worker operation'});
+});
+
+it.each(FIELDS)('accepts a tweak of the %s field, so every field the editor offers can be edited',field=>{
+  const reply=handleSourceRequest({id:8,op:'tweak',files,src,tweak:{field,value:field==='text'?'x':field==='fontFamily'?'mono':field==='color'||field==='backgroundColor'?'#123456':field==='fontWeight'?'700':'8'}});
+  expect(reply).not.toMatchObject({error:expect.any(String)});
+  expect(reply).toMatchObject({id:8,op:'tweak',result:{ok:true}});
+});

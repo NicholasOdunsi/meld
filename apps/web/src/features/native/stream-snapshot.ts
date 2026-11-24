@@ -119,6 +119,22 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     send = { canSend: false, reason: NOT_READY_TEXT[input.readiness.reason] };
   }
 
+  // A screen belongs to the Star its proposing reply belongs to (as a Star's own
+  // reply or as the reply to one of its follow-ups).
+  const starByMessage = new Map<string, string>();
+  for (const star of stars) {
+    starByMessage.set(star.sourceMessageId, star.id);
+    for (const followup of star.followupMessageIds) starByMessage.set(followup, star.id);
+  }
+  const starIds = new Set(stars.map((star) => star.id));
+  const starForMessage = (messageId: string | null | undefined): string | null => {
+    const message = messageId ? messages.find((m) => m.id === messageId) : null;
+    if (!message?.taskId) return null;
+    if (starIds.has(message.taskId)) return message.taskId;
+    const source = sourceByTask.get(message.taskId);
+    return source ? starByMessage.get(source) ?? null : null;
+  };
+
   const designTasks = new Map(input.taskStatuses
     .filter((task) => task.kind === "design_screen_generate")
     .map((task) => [task.taskId, task]));
@@ -137,6 +153,7 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     formFactor: row.formFactor,
     createdAt: row.createdAt,
     updating: row.updating,
+    starId: starForMessage(row.sourceMessageId),
     }];
   });
   const activity = deriveActivity(input.taskStatuses, stars, screens);

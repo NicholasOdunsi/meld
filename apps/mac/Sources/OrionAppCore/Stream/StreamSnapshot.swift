@@ -183,7 +183,8 @@ public struct StreamSnapshot: Equatable, Sendable {
                   let date = fractional.date(from: dateText) ?? plain.date(from: dateText) else { return nil }
             return StreamScreen(id: id, name: name, state: state, versionID: row["versionId"] as? String,
                                 formFactor: row["formFactor"] as? String ?? "mobile", createdAt: date,
-                                updating: row["updating"] as? Bool ?? false)
+                                updating: row["updating"] as? Bool ?? false,
+                                starID: (row["starId"] as? String).flatMap { $0.isEmpty ? nil : $0 })
         }.sorted { $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt }
         let activity = (fields["activity"] as? [[String: Any]] ?? []).compactMap { row -> StreamActivity? in
             guard let taskID = row["taskId"] as? String, !taskID.isEmpty,
@@ -226,6 +227,11 @@ public struct StreamSnapshot: Equatable, Sendable {
     public var mainChatTimeline: [StreamTimelineItem] {
         let items = mainChatMessages.map(StreamTimelineItem.message) + screenItems
         return items.sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
+    }
+
+    /// Screens a Star's replies asked for, oldest first.
+    public func screens(forStar starID: String) -> [StreamScreen] {
+        screens.filter { $0.starID == starID }
     }
 
     public func activity(forStar starID: String?) -> StreamActivity? {

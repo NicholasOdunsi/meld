@@ -10,7 +10,7 @@ struct StreamSnapshotTests {
                           "createdAt": "2026-11-15T10:00:00.000Z"]],
             "screens": [
                 ["id": "s1", "name": "Balance", "state": "built", "versionId": "v1", "formFactor": "mobile",
-                 "createdAt": "2026-11-15T10:05:00.000Z", "updating": false],
+                 "createdAt": "2026-11-15T10:05:00.000Z", "updating": false, "starId": "star1"],
                 ["id": "s2", "name": "Card", "state": "building", "versionId": NSNull(), "formFactor": "desktop",
                  "createdAt": "2026-11-15T10:06:00.000Z", "updating": false],
             ],
@@ -22,6 +22,10 @@ struct StreamSnapshotTests {
         ]
         let snapshot = try #require(StreamSnapshot.decode(fields))
         #expect(snapshot.screens.map(\.id) == ["s1", "s2"])
+        #expect(snapshot.screens[0].starID == "star1")
+        #expect(snapshot.screens[1].starID == nil)
+        #expect(snapshot.screens(forStar: "star1").map(\.id) == ["s1"])
+        #expect(snapshot.screens(forStar: "other").isEmpty)
         #expect(snapshot.screens[0].cacheKey == "s1-v1")
         #expect(snapshot.screens[1].cacheKey == nil)
         #expect(snapshot.screens[0].pixelSize == CGSize(width: 390, height: 844))

@@ -76,6 +76,15 @@ struct OrionRootView: View {
 
 struct WebViewHost: NSViewRepresentable {
     let webView: WKWebView
-    func makeNSView(context: Context) -> WKWebView { webView }
-    func updateNSView(_ nsView: WKWebView, context: Context) {}
+    /// A project panel (Canvas, Artifacts) is content inside the native frame.
+    /// Its two-finger sideways swipes belong to the board, not to browser
+    /// history, which would drag the whole page away and leave it offset.
+    var allowsSwipeNavigation = true
+    func makeNSView(context: Context) -> WKWebView {
+        webView.allowsBackForwardNavigationGestures = allowsSwipeNavigation
+        return webView
+    }
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        nsView.allowsBackForwardNavigationGestures = allowsSwipeNavigation
+    }
 }

@@ -154,6 +154,28 @@ export function checkSource(source) {
   return failures;
 }
 
+// owner-approved custom inspector surface (see docs/superpowers/plans/2026-11-22-inspector-v2.md):
+// every literal design value of it lives in this one file, so components never repeat them.
+const OWNER_APPROVED_PATHS = [
+  "features/canvas-excalidraw/live/inspector-theme.ts",
+];
+// The field primitives (inspector-ui.tsx) are native elements styled only by that theme, so they may use
+// raw <div>/<span>. Every other rule (colours, pixels, utility classes) still applies to them.
+const OWNER_APPROVED_RAW_ELEMENT_PATHS = [
+  "features/canvas-excalidraw/live/inspector-ui.tsx",
+];
+const RAW_ELEMENT_FAILURES = new Set(["raw <div> layout", "raw <span> layout"]);
+
+function allowsRawElements(path) {
+  const normalized = path.split("\\").join("/");
+  return OWNER_APPROVED_RAW_ELEMENT_PATHS.some((approved) => normalized.endsWith(approved));
+}
+
+function isOwnerApprovedPath(path) {
+  const normalized = path.split("\\").join("/");
+  return OWNER_APPROVED_PATHS.some((approved) => normalized.endsWith(approved));
+}
+
 function isTestFixturePath(path) {
   return /\.(?:test|spec)\.(?:ts|tsx)$/i.test(path);
 }
@@ -166,9 +188,11 @@ export function checkTree(root) {
       failures.push(...checkTree(path));
     } else if (
       [".tsx", ".ts", ".css"].includes(extname(path)) &&
-      !isTestFixturePath(path)
+      !isTestFixturePath(path) &&
+      !isOwnerApprovedPath(path)
     ) {
       for (const failure of checkSource(readFileSync(path, "utf8"))) {
+        if (RAW_ELEMENT_FAILURES.has(failure) && allowsRawElements(path)) continue;
         failures.push(`${path}: ${failure}`);
       }
     }

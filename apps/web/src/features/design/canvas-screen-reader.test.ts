@@ -198,6 +198,19 @@ describe("listRoomCanvasScreens", () => {
     expect(versionQuery.eq).toHaveBeenCalledWith("room_id", ROOM_ID);
   });
 
+  it("marks screens whose current version is a react or html source", async () => {
+    const { versionQuery } = withRows([screenRows[0]], [{ ...versionRows[0], markup: "", styles: "", source_kind: "react" }]);
+    const [screen] = await listRoomCanvasScreens(ROOM_ID);
+    expect(screen.sourceKind).toBe("react");
+    expect(versionQuery.select).toHaveBeenCalledWith("id,screen_id,markup,styles,script,actions_json,source_kind");
+  });
+
+  it("leaves legacy screens without a source kind", async () => {
+    withRows([screenRows[0]], [{ ...versionRows[0], source_kind: "legacy" }]);
+    const [screen] = await listRoomCanvasScreens(ROOM_ID);
+    expect(screen).not.toHaveProperty("sourceKind");
+  });
+
   it("returns empty without a version query when screens have no current version", async () => {
     const { versionQuery } = withRows(screenRows.slice(1));
 

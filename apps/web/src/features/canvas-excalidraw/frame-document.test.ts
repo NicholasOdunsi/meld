@@ -1,3 +1,4 @@
+import { SCREEN_SCROLLBAR_DEFAULTS } from "@meld/screen-runtime/document";
 import { describe, expect, it } from "vitest";
 import { buildBoardFrameDocument, BOARD_FRAME_CSP, BOARD_FRAME_SANDBOX, buildFrameDocument, FRAME_CSP, FRAME_MESSAGE_SOURCE, FRAME_SANDBOX } from "./frame-document";
 
@@ -106,5 +107,15 @@ describe("buildBoardFrameDocument", () => {
     expect(doc.indexOf('script-src \'none\'')).toBeLessThan(doc.indexOf('<script>while(true){}'));
     expect(BOARD_FRAME_CSP).toContain("script-src 'none'");
     expect(BOARD_FRAME_SANDBOX).toBe("");
+  });
+
+  it("gives the picture the same quiet scrollbar, before the page's own styles and after the CSP", () => {
+    const doc = buildBoardFrameDocument('<!doctype html><html><head><style>::-webkit-scrollbar{width:3px}</style></head><body><h1>Hi</h1></body></html>');
+    const track = doc.indexOf("::-webkit-scrollbar-track");
+    expect(track).toBeGreaterThan(-1);
+    for (const rule of SCREEN_SCROLLBAR_DEFAULTS) expect(doc).toContain(rule);
+    expect(doc.indexOf("Content-Security-Policy")).toBeLessThan(track);
+    expect(track).toBeLessThan(doc.indexOf("::-webkit-scrollbar{width:3px}"));
+    expect(doc.match(/<!doctype/gi)).toHaveLength(1);
   });
 });

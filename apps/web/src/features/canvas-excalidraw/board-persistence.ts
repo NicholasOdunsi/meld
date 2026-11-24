@@ -3,10 +3,15 @@ import type { Screen } from "./screen-store";
 
 export const MAX_SAVED_BYTES = 4_000_000;
 
+// One screen's stored HTML. A larger screen would make every board save fail,
+// so anything that writes to the screen store must respect this.
+export const MAX_SCREEN_HTML_CHARS = 200_000;
+
 const ScreenSchema = z.object({
   id: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
   rev: z.number().int().min(1),
-  html: z.string().max(200_000),
+  html: z.string().max(MAX_SCREEN_HTML_CHARS),
+  snapshot: z.literal(true).optional(),
 }).strict();
 
 const SavedSchema = z.object({

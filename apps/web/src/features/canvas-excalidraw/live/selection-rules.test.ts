@@ -1,0 +1,155 @@
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
+import { escapeAction, isInsidePopup, isValidPick, opensCodeOnWake, shouldEnableSelectMode, shouldShowLivePanel, showScreenPill, syncSelectMode, tweakDisabledReason } from "./selection-rules";
+
+describe("shouldEnableSelectMode", () => {
+  const base = { phase: "running" as const, hasDraft: true, canEdit: true, edit: true };
+  it("is on only in Edit, for an awake, editable draft", () => {
+    for (const phase of ["compiling", "loading", "running"] as const) expect(shouldEnableSelectMode({ ...base, phase })).toBe(true);
+  });
+  it("is off by default (screens are interactive), while asleep, without a draft, or read-only", () => {
+    expect(shouldEnableSelectMode({ ...base, edit: false })).toBe(false);
+    expect(shouldEnableSelectMode({ ...base, phase: "asleep" })).toBe(false);
+    expect(shouldEnableSelectMode({ ...base, hasDraft: false })).toBe(false);
+    expect(shouldEnableSelectMode({ ...base, canEdit: false })).toBe(false);
+  });
+});
+
+describe("shouldShowLivePanel", () => {
+  it("shows for a valid pick or an explicitly opened Code, never while asleep", () => {
+    expect(shouldShowLivePanel({ panelOpen: false, validPicked: true, phase: "running" })).toBe(true);
+    expect(shouldShowLivePanel({ panelOpen: true, validPicked: false, phase: "running" })).toBe(true);
+    expect(shouldShowLivePanel({ panelOpen: true, validPicked: true, phase: "asleep" })).toBe(false);
+  });
+  it("stays away after a wake with nothing picked and Code closed", () => {
+    for (const phase of ["compiling", "loading", "running", "stopped"] as const) expect(shouldShowLivePanel({ panelOpen: false, validPicked: false, phase })).toBe(false);
+  });
+  it("holds on while an edited element is being selected again", () => {
+    expect(shouldShowLivePanel({ panelOpen: false, validPicked: false, phase: "loading", reselecting: true })).toBe(true);
+    expect(shouldShowLivePanel({ panelOpen: false, validPicked: false, phase: "asleep", reselecting: true })).toBe(false);
+  });
+});
+
+describe("escapeAction", () => {
+  it("ignores Escape inside a popup, clears a selection (even in Edit), leaves Edit, otherwise sleeps", () => {
+    expect(escapeAction({ hasPick: true, targetInsidePopup: true, edit: true })).toBe("ignore");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: true, edit: false })).toBe("ignore");
+    expect(escapeAction({ hasPick: true, targetInsidePopup: false, edit: true })).toBe("clear-selection");
+    expect(escapeAction({ hasPick: true, targetInsidePopup: false, edit: false })).toBe("clear-selection");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: false, edit: true })).toBe("exit-edit");
+    expect(escapeAction({ hasPick: false, targetInsidePopup: false, edit: false })).toBe("sleep");
+  });
+  it("recognises the targets inside a dialog, popover or listbox", () => {
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const inner = document.createElement("button");
+    dialog.appendChild(inner);
+    const listbox = document.createElement("ul");
+    listbox.setAttribute("role", "listbox");
+    const option = document.createElement("li");
+    listbox.appendChild(option);
+    const popover = document.createElement("div");
+    popover.setAttribute("popover", "");
+    const colour = document.createElement("input");
+    popover.appendChild(colour);
+    expect([inner, option, colour].map(isInsidePopup)).toEqual([true, true, true]);
+    expect(isInsidePopup(document.createElement("button"))).toBe(false);
+    expect(isInsidePopup(null)).toBe(false);
+  });
+});
+
+describe("isValidPick", () => {
+  it("needs the awake screen and the draft revision on screen", () => {
+    const pick = { boardId: "a", revision: 3 };
+    expect(isValidPick(pick, "a", 3)).toBe(true);
+    expect(isValidPick(pick, "b", 3)).toBe(false);
+    expect(isValidPick(pick, "a", 4)).toBe(false);
+    expect(isValidPick(pick, null, null)).toBe(false);
+    expect(isValidPick(null, "a", 3)).toBe(false);
+  });
+});
+
+describe("syncSelectMode", () => {
+  // A stand-in for the controller: it can only pick once the frame is ready, and
+  // `reset` is what a preview, reload or wake does to it.
+  function fakeLive(canPick: boolean) {
+    const state = { picking: false, canPick };
+    const live = {
+      isPicking: () => state.picking,
+      canPick: () => state.canPick,
+      setPickEnabled: vi.fn((enabled: boolean) => { state.picking = enabled && state.canPick; }),
+      selectElement: vi.fn(),
+    };
+    return { live, state };
+  }
+  it("turns picking on once the frame can pick, and back on after the controller reset it", () => {
+    const { live, state } = fakeLive(false);
+    syncSelectMode(live, true, () => null);
+    expect(live.setPickEnabled).not.toHaveBeenCalled();
+    state.canPick = true;
+    syncSelectMode(live, true, () => null);
+    expect(live.setPickEnabled).toHaveBeenLastCalledWith(true);
+    syncSelectMode(live, true, () => null);
+    expect(live.setPickEnabled).toHaveBeenCalledTimes(1);
+    state.picking = false; // previewDraft turned it off
+    syncSelectMode(live, true, () => null);
+    expect(live.setPickEnabled).toHaveBeenCalledTimes(2);
+  });
+  it("turns picking off only when it is on", () => {
+    const { live, state } = fakeLive(true);
+    syncSelectMode(live, false, () => null);
+    expect(live.setPickEnabled).not.toHaveBeenCalled();
+    state.picking = true;
+    syncSelectMode(live, false, () => null);
+    expect(live.setPickEnabled).toHaveBeenCalledWith(false);
+  });
+  it("selects the edited element again after picking is back on, and only when the frame can pick", () => {
+    const { live, state } = fakeLive(false);
+    const take = vi.fn<() => string | null>(() => "a.tsx:1:9");
+    syncSelectMode(live, true, take);
+    expect(take).not.toHaveBeenCalled();
+    state.canPick = true;
+    syncSelectMode(live, true, take);
+    expect(live.selectElement).toHaveBeenCalledWith("a.tsx:1:9");
+    expect(live.setPickEnabled.mock.invocationCallOrder[0]).toBeLessThan(live.selectElement.mock.invocationCallOrder[0]);
+  });
+  it("does not select again while picking is off", () => {
+    const { live } = fakeLive(true);
+    const take = vi.fn<() => string | null>(() => "a.tsx:1:9");
+    syncSelectMode(live, false, take);
+    expect(take).not.toHaveBeenCalled();
+    expect(live.selectElement).not.toHaveBeenCalled();
+  });
+});
+
+describe("opensCodeOnWake", () => {
+  it("opens Code when asked, on a compile failure, or when the screen can't be edited", () => {
+    expect(opensCodeOnWake({ phase: "running", tab: "tweak", editable: true })).toBe(false);
+    expect(opensCodeOnWake({ phase: "running", tab: "code", editable: true })).toBe(true);
+    expect(opensCodeOnWake({ phase: "compile-failed", tab: "tweak", editable: true })).toBe(true);
+    expect(opensCodeOnWake({ phase: "running", tab: "tweak", editable: false })).toBe(true);
+    expect(opensCodeOnWake({ phase: "asleep", tab: "code", editable: false })).toBe(false);
+  });
+});
+
+describe("tweakDisabledReason", () => {
+  it("disables Tweak with nothing selected or nothing editable", () => {
+    expect(tweakDisabledReason({ editable: true, hasPick: false, reselecting: false })).toBe("Click something in the screen to tweak it");
+    expect(tweakDisabledReason({ editable: true, hasPick: true, reselecting: false })).toBeUndefined();
+    expect(tweakDisabledReason({ editable: true, hasPick: false, reselecting: true })).toBeUndefined();
+    expect(tweakDisabledReason({ editable: false, hasPick: true, reselecting: false })).toMatch(/can't be edited/);
+  });
+});
+
+describe("showScreenPill", () => {
+  const base = { phase: "running" as const, access: "edit" as const, hasDraft: true, editable: true };
+  it("shows for an awake screen the user may edit", () => {
+    for (const phase of ["compiling", "loading", "running"] as const) expect(showScreenPill({ ...base, phase })).toBe(true);
+  });
+  it("hides while asleep, for view access, without a draft, or when not editable", () => {
+    expect(showScreenPill({ ...base, phase: "asleep" })).toBe(false);
+    expect(showScreenPill({ ...base, access: "view" })).toBe(false);
+    expect(showScreenPill({ ...base, hasDraft: false })).toBe(false);
+    expect(showScreenPill({ ...base, editable: false })).toBe(false);
+  });
+});

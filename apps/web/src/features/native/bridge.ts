@@ -91,6 +91,8 @@ export type StreamScreen = {
   id: string; name: string; state: "building" | "built" | "failed";
   versionId: string | null; formFactor: "mobile" | "tablet" | "desktop";
   createdAt: string; updating: boolean;
+  /** The Star whose reply asked for this screen, when known. */
+  starId?: string | null;
 };
 
 export type StreamActivityPhase =

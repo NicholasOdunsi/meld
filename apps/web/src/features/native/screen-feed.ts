@@ -13,6 +13,8 @@ export type ScreenFeedRow = {
   formFactor: "mobile" | "tablet" | "desktop";
   createdAt: string;
   generationTaskId?: string | null;
+  /** The Orion reply that proposed this screen; links it to a Star. */
+  sourceMessageId?: string | null;
 };
 
 const Row = z.object({
@@ -61,11 +63,20 @@ export async function listRoomScreenFeed(roomId: string): Promise<ScreenFeedRow[
         for (const generation of generationRows.data) generationByScreen.set(generation.screen_id, generation.task_id);
       }
     }
+    // Which Orion reply asked for each screen. A failure only means no Star link.
+    const sourceByScreen = new Map<string, string>();
+    const { data: sources, error: sourceError } = await supabase
+      .rpc("list_design_screen_sources", { target_room_id: roomId });
+    if (!sourceError) {
+      const sourceRows = z.array(z.object({ screen_id: z.string().uuid(), message_id: z.string().uuid() })).safeParse(sources ?? []);
+      if (sourceRows.success) for (const source of sourceRows.data) sourceByScreen.set(source.screen_id, source.message_id);
+    }
     return parsed.data.map((row) => ({
       id: row.id, name: row.name, state: row.state, updating: row.updating,
       currentVersionId: row.current_version_id, formFactor: row.form_factor,
       createdAt: row.created_at,
       generationTaskId: generationByScreen.get(row.id) ?? null,
+      sourceMessageId: sourceByScreen.get(row.id) ?? null,
     }));
   } catch {
     return [];

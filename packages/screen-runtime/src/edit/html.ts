@@ -1,0 +1,357 @@
+import { parse, type DefaultTreeAdapterMap } from "parse5";
+import postcss, { type Declaration, type Root } from "postcss";
+import {
+  descriptor,
+  emptyBindings,
+  type EditableNode,
+  type Patch,
+} from "./patch";
+import {
+  blankInsertOffset,
+  edges,
+  NO_TEXT_TAGS,
+  SVG_TEXT_TAGS,
+  TEXT_TAGS,
+  textBinding,
+  VOID_TAGS,
+  type Content,
+  type Run,
+} from "./runs";
+import {
+  changeUtility,
+  cssValue,
+  familyKeyOf,
+  utilityBlocked,
+  utilityField,
+  utilityValue,
+} from "./style";
+import { FIELDS, type Field, type Range } from "./types";
+type Element = DefaultTreeAdapterMap["element"];
+type Node = DefaultTreeAdapterMap["node"];
+const properties: Record<Exclude<Field, "text">, string> = {
+  color: "color",
+  backgroundColor: "background-color",
+  fontSize: "font-size",
+  fontWeight: "font-weight",
+  fontFamily: "font-family",
+  padding: "padding",
+  gap: "gap",
+  borderRadius: "border-radius",
+  width: "width",
+  height: "height",
+};
+const EMPTY_TEXT_RUN = "orion-text-run";
+const rawText = new Set([
+  "style",
+  "script",
+  "textarea",
+  "title",
+  "xmp",
+  "plaintext",
+  "noscript",
+  "iframe",
+  "noembed",
+  "noframes",
+]);
+function htmlText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+function quoted(value: string): string {
+  return '"' + htmlText(value).replaceAll('"', "&quot;") + '"';
+}
+// parse5 deliberately drops duplicate attributes; retain their authored names for ownership checks.
+function attributeNames(tag: string): {
+  names: string[];
+  close: number;
+} {
+  const names: string[] = [];
+  let i = 1;
+  while (i < tag.length && !/[\s/>]/.test(tag[i])) i++;
+  while (i < tag.length) {
+    while (/\s/.test(tag[i] ?? "")) i++;
+    if (
+      i >= tag.length ||
+      tag[i] === ">" ||
+      (tag[i] === "/" && tag[i + 1] === ">")
+    )
+      break;
+    const start = i;
+    while (i < tag.length && !/[\s=/>]/.test(tag[i])) i++;
+    if (i === start) {
+      i++;
+      continue;
+    }
+    names.push(tag.slice(start, i).toLowerCase());
+    while (/\s/.test(tag[i] ?? "")) i++;
+    if (tag[i] !== "=") continue;
+    i++;
+    while (/\s/.test(tag[i] ?? "")) i++;
+    if (tag[i] === '"' || tag[i] === "'") {
+      const quote = tag[i++];
+      while (i < tag.length && tag[i] !== quote) i++;
+      if (i < tag.length) i++;
+    } else while (i < tag.length && !/[\s>]/.test(tag[i])) i++;
+  }
+  return {
+    names,
+    close: i,
+  };
+}
+function declarations(value: string): Root | null {
+  try {
+    const root = postcss.parse(value, {
+      from: undefined,
+    });
+    return root.nodes.every((n) => n.type === "decl" || n.type === "comment")
+      ? root
+      : null;
+  } catch {
+    return null;
+  }
+}
+function dynamic(value: string): boolean {
+  return /(?:var|calc|env|attr)\s*\(/i.test(value) || /\\|\/\*/.test(value);
+}
+const preTags = new Set(["pre", "listing", "plaintext"]);
+const preStyle =
+  /white-space\s*:\s*(?:pre|break-spaces)|white-space-collapse\s*:\s*(?:preserve|break-spaces)/i;
+const preClass = /^(?:[^\s:]+:)*!?whitespace-(?:pre|break-spaces)/;
+// Text inside <pre> or white-space: pre* shows its whitespace as written. Only inline styles and
+// utility classes can be seen here. A white-space: pre* rule in a stylesheet (<style> or a linked
+// file) cannot be seen from the element's source, so such text is treated as normal flow.
+function preserves(node: Element): boolean {
+  for (let at: Node | null = node; at && "tagName" in at; at = at.parentNode) {
+    if (preTags.has(at.tagName)) return true;
+    for (const { name, value } of at.attrs) {
+      if (name === "style" && preStyle.test(value)) return true;
+      if (name === "class" && value.split(/\s+/).some((t) => preClass.test(t)))
+        return true;
+    }
+  }
+  return false;
+}
+const svgNamespace = "http://www.w3.org/2000/svg";
+// Whether typing may go into this element when it has no text: not a void, replaced, foreign or
+// structural element, and only with an explicit end tag to type before.
+function takesText(node: Element): boolean {
+  if (VOID_TAGS.has(node.tagName) || NO_TEXT_TAGS.has(node.tagName))
+    return false;
+  if (node.namespaceURI === svgNamespace)
+    return SVG_TEXT_TAGS.has(node.tagName);
+  return node.namespaceURI === "http://www.w3.org/1999/xhtml";
+}
+function contentOf(source: string, node: Element): Content {
+  const location = node.sourceCodeLocation!;
+  const content: Content = {
+    runs: [],
+    dynamic: 0,
+    elements: 0,
+    insert: null,
+    preserve: preserves(node),
+    textTag: TEXT_TAGS.has(node.tagName),
+  };
+  // Elements seen before each run, to know whether one follows it.
+  const before = new Map<Run, number>();
+  for (const child of node.childNodes) {
+    if (child.nodeName === "#comment") {
+      if ("data" in child && child.data === EMPTY_TEXT_RUN && child.sourceCodeLocation) {
+        const at = child.sourceCodeLocation;
+        content.runs.push({
+          from: at.startOffset, to: at.endOffset, text: "", emptySlot: true, marker: true,
+          write: (value) => value === "" ? `<!--${EMPTY_TEXT_RUN}-->` : htmlText(value),
+        });
+      }
+      continue;
+    }
+    if (child.nodeName !== "#text" || !("value" in child)) {
+      content.elements += 1;
+      continue;
+    }
+    const at = child.sourceCodeLocation;
+    if (!at) {
+      content.dynamic += 1;
+      continue;
+    }
+    const from = at.startOffset,
+      to = at.endOffset;
+    // Decoded edge whitespace includes character references such as &#32;.
+    const { lead, trail } = edges(child.value);
+    const run: Run = {
+      from,
+      to,
+      text: child.value,
+      write: (value, keepEmpty) => lead + (value === "" && keepEmpty ? `<!--${EMPTY_TEXT_RUN}-->` : htmlText(value)) + trail,
+    };
+    before.set(run, content.elements);
+    content.runs.push(run);
+  }
+  if (takesText(node) && location.endTag && location.startTag) {
+    // Only used when every run is blank: typing goes into the first one.
+    const blank = content.runs[0];
+    const raw = blank ? source.slice(blank.from, blank.to) : "";
+    const follows = !!blank && content.elements > before.get(blank)!;
+    const at = blank
+      ? blank.from + blankInsertOffset(raw, follows)
+      : location.startTag.endOffset;
+    // Typed after a line break's indentation, the text would touch the element after it
+    // ("\n    NEW<span>" reads "NEWRIDE?"): one space keeps them apart. Before a <br> or an end
+    // tag that space collapses away, so it is harmless there.
+    const gap = follows && /[\r\n]/.test(raw) ? " " : "";
+    content.insert = (value) => ({
+      from: at,
+      to: at,
+      value: value === "" ? "" : htmlText(value) + gap,
+    });
+  }
+  return content;
+}
+function bindingsFor(source: string, node: Element): EditableNode {
+  const bindings = emptyBindings(),
+    location = node.sourceCodeLocation!;
+  const startTag = location.startTag!;
+  const { names, close } = attributeNames(
+    source.slice(startTag.startOffset, startTag.endOffset),
+  );
+  const duplicate = (name: string) =>
+    names.filter((n) => n === name).length > 1;
+  const attr = (name: string) => node.attrs.find((a) => a.name === name)?.value;
+  const put = (name: string, value: string): Patch => {
+    const existing = location.attrs?.[name];
+    if (existing)
+      return {
+        from: existing.startOffset,
+        to: existing.endOffset,
+        value: name + "=" + quoted(value),
+      };
+    const at = startTag.startOffset + close;
+    return {
+      from: at,
+      to: at,
+      value: " " + name + "=" + quoted(value),
+    };
+  };
+  if (!rawText.has(node.tagName) && node.tagName !== "template")
+    bindings.text = textBinding(contentOf(source, node));
+  const className = attr("class"),
+    style = attr("style");
+  const css = style === undefined ? postcss.root() : declarations(style);
+  for (const field of FIELDS) {
+    if (field === "text" || duplicate("class") || duplicate("style") || !css)
+      continue;
+    if (className !== undefined && utilityBlocked(className, field)) continue;
+    const property = properties[field];
+    const conflicts = (prop: string): boolean => {
+      if (prop === "all") return true;
+      if (
+        (field === "fontSize" ||
+          field === "fontWeight" ||
+          field === "fontFamily") &&
+        prop === "font"
+      )
+        return true;
+      if (field === "backgroundColor" && prop === "background") return true;
+      if (field === "padding" && prop.startsWith("padding-")) return true;
+      if (field === "gap" && (prop === "row-gap" || prop === "column-gap"))
+        return true;
+      if (
+        field === "borderRadius" &&
+        /^border-.*-radius$/.test(prop) &&
+        prop !== property
+      )
+        return true;
+      return false;
+    };
+    if (
+      css.nodes.some(
+        (n) => n.type === "decl" && conflicts(n.prop.toLowerCase()),
+      )
+    )
+      continue;
+    const hits = css.nodes.filter(
+      (n): n is Declaration =>
+        n.type === "decl" && n.prop.toLowerCase() === property,
+    );
+    if (
+      hits.length > 1 ||
+      css.nodes.some((n) => n.type === "decl" && /\\/.test(n.prop)) ||
+      (hits[0] && dynamic(hits[0].value))
+    )
+      continue;
+    const hasUtility =
+      className !== undefined &&
+      className.split(/\s+/).some((token) => utilityField(token) === field);
+    if (hits[0] && hasUtility) continue;
+    const current = hits[0];
+    bindings[field] = {
+      value: current
+        ? field === "fontFamily"
+          ? familyKeyOf(current.value)
+          : current.value.replace(/px$/i, "")
+        : className === undefined
+          ? null
+          : utilityValue(className, field),
+      make: (input) => {
+        const tweak = {
+          field,
+          value: input,
+        };
+        const value = cssValue(tweak);
+        if (value === null) return null;
+        if (!current && className !== undefined) {
+          const changed = changeUtility(className, tweak);
+          if (changed !== null) return put("class", changed);
+        }
+        const updated = css.clone();
+        if (current) {
+          const target = updated.nodes[
+            css.nodes.indexOf(current)
+          ] as Declaration;
+          target.value = value;
+        } else
+          updated.append({
+            prop: property,
+            value,
+          });
+        return put("style", updated.toString());
+      },
+    };
+  }
+  return descriptor(bindings);
+}
+export function locateHtml(source: string, range: Range): EditableNode | null {
+  if (
+    !Number.isInteger(range.start) ||
+    !Number.isInteger(range.end) ||
+    range.start < 0 ||
+    range.start >= range.end ||
+    range.end > source.length
+  )
+    return null;
+  try {
+    const root = parse(source, {
+      sourceCodeLocationInfo: true,
+    });
+    let found: Element | null = null;
+    const visit = (node: Node): void => {
+      if ("tagName" in node) {
+        const loc = node.sourceCodeLocation;
+        if (
+          loc?.startTag &&
+          loc.startOffset === range.start &&
+          loc.endOffset === range.end
+        )
+          found = node;
+      }
+      if ("childNodes" in node)
+        for (const child of node.childNodes) visit(child);
+      if ("content" in node) visit(node.content);
+    };
+    visit(root);
+    return found ? bindingsFor(source, found) : null;
+  } catch {
+    return null;
+  }
+}
