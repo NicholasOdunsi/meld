@@ -75,8 +75,43 @@ final class PreviewEditor {
         var canUndo: Bool
         var canRedo: Bool
         var pending: Bool
+
+        private enum CodingKeys: String, CodingKey {
+            case starId, label, tag, html, fields, computed, reason, locked, canUndo, canRedo, pending
+        }
+
+        /// The web panel's strict schema wants `fields`, `reason` and `locked` present (null when empty);
+        /// synthesized Codable would leave a nil optional out.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(starId, forKey: .starId)
+            try container.encode(label, forKey: .label)
+            try container.encode(tag, forKey: .tag)
+            try container.encode(html, forKey: .html)
+            try container.encode(fields, forKey: .fields)
+            try container.encode(computed, forKey: .computed)
+            try container.encode(reason, forKey: .reason)
+            try container.encode(locked, forKey: .locked)
+            try container.encode(canUndo, forKey: .canUndo)
+            try container.encode(canRedo, forKey: .canRedo)
+            try container.encode(pending, forKey: .pending)
+        }
     }
-    struct FieldState: Codable, Equatable { let editable: Bool; let value: String?; let runs: [String]? }
+    struct FieldState: Codable, Equatable {
+        let editable: Bool
+        let value: String?
+        let runs: [String]?
+
+        private enum CodingKeys: String, CodingKey { case editable, value, runs }
+
+        /// `value` is present-but-nullable on the web side; `runs` is nullish, so it is left out when nil.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(editable, forKey: .editable)
+            try container.encode(value, forKey: .value)
+            try container.encodeIfPresent(runs, forKey: .runs)
+        }
+    }
 
     private(set) var starID: String?
     private(set) var selection: Selection?
@@ -89,7 +124,8 @@ final class PreviewEditor {
     private var source: PreviewSource?
     private var pick: PreviewPick?
     private var histories: [String: PreviewEditHistory] = [:]
-    private var inFlight: Task<Void, Never>?
+    /// Every helper call (inspect, apply, restore) takes its turn on this one chain, so they never overlap.
+    private var writeTail: Task<Void, Never>?
     private var generation = 0
 
     init(helper: any PreviewEditRunning,
@@ -106,52 +142,77 @@ final class PreviewEditor {
     func stop() {
         clearSelection()
         starID = nil
-        inFlight?.cancel()
     }
 
-    /// Drops the pick and invalidates any inspect still waiting on the helper.
+    /// Drops the pick and invalidates every queued or in-flight operation for it.
     private func clearSelection() {
         generation += 1
         selection = nil; source = nil; pick = nil
     }
 
+    /// Runs `work` after everything queued before it. Callers capture what the work needs when they
+    /// enqueue, so it never depends on what is selected by the time its turn comes.
+    @discardableResult
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let previous = writeTail
+        let task = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        writeTail = task
+        return task
+    }
+
+    /// True while `starID` is still the edited Star and nothing was picked, cleared or closed since `generation`.
+    private func isCurrent(_ starID: String, _ generation: Int) -> Bool {
+        self.starID == starID && self.generation == generation
+    }
+
     func receive(_ message: PreviewMessage) {
         guard let starID else { return }
+        let generation = self.generation
         switch message {
         case .cleared: clearSelection()
         case .picked(let next):
-            generation += 1
-            let mine = generation
+            self.generation += 1
+            let mine = self.generation
             pick = next; source = next.src
-            inFlight = Task { [weak self] in await self?.inspect(next, starID: starID, generation: mine) }
+            enqueue { [weak self] in await self?.inspect(next, starID: starID, generation: mine) }
         case .retyped(let text):
-            // Edits queue behind each other so two quick messages never race on the same file.
-            let previous = inFlight
-            inFlight = Task { [weak self] in
-                await previous?.value
-                await self?.handle(.tweak(field: "text", value: text, index: nil))
+            guard let src = source else { return }
+            enqueue { [weak self] in
+                await self?.performTweak(field: "text", value: text, index: nil, starID: starID, source: src, generation: generation)
             }
         case .resized(let width, let height):
-            let previous = inFlight
-            inFlight = Task { [weak self] in
-                await previous?.value
-                if let width { await self?.handle(.tweak(field: "width", value: String(width), index: nil)) }
-                if let height { await self?.handle(.tweak(field: "height", value: String(height), index: nil)) }
+            guard let src = source else { return }
+            enqueue { [weak self] in
+                if let width {
+                    await self?.performTweak(field: "width", value: String(width), index: nil, starID: starID, source: src, generation: generation)
+                }
+                if let height {
+                    await self?.performTweak(field: "height", value: String(height), index: nil, starID: starID, source: src, generation: generation)
+                }
             }
         }
     }
 
-    /// Lets tests (and the exchange loop) wait for the work a message started.
-    func settle() async { await inFlight?.value }
+    /// Lets tests (and the exchange loop) wait for the work queued so far.
+    func settle() async { await writeTail?.value }
 
     func handle(_ request: PreviewRequest) async {
         guard let starID else { return }
+        let generation = self.generation
         switch request {
         case .close: stop()
-        case .undo: await replay(undo: true, starID: starID)
-        case .redo: await replay(undo: false, starID: starID)
+        case .undo, .redo:
+            let undo = request == .undo
+            await enqueue { [weak self] in await self?.replay(undo: undo, starID: starID) }.value
         case .describe(let text): await describe(text, starID: starID)
-        case .tweak(let field, let value, let index): await tweak(field: field, value: value, index: index, starID: starID)
+        case .tweak(let field, let value, let index):
+            guard let src = source else { return }
+            await enqueue { [weak self] in
+                await self?.performTweak(field: field, value: value, index: index, starID: starID, source: src, generation: generation)
+            }.value
         }
     }
 
@@ -210,11 +271,12 @@ final class PreviewEditor {
     }
 
     private func inspect(_ pick: PreviewPick, starID: String, generation: Int) async {
+        guard isCurrent(starID, generation) else { return }
         guard let src = pick.src, let root = root(starID) else {
             publish(fields: nil, reason: reasonText(nil), starID: starID); return
         }
         let reply = await call(["op": "inspect", "root": root.path, "src": srcJSON(src)])
-        guard generation == self.generation, self.starID == starID else { return }
+        guard isCurrent(starID, generation) else { return }
         if let reply, isOK(reply), let fields = fields(from: reply) {
             publish(fields: fields, reason: nil, starID: starID)
         } else {
@@ -222,38 +284,49 @@ final class PreviewEditor {
         }
     }
 
-    private func tweak(field: String, value: String, index: Int?, starID: String) async {
+    /// One queued edit. `source`, `starID` and `generation` are what was selected when the edit was requested;
+    /// if the selection moved on before this turn, the edit is dropped without touching the helper.
+    private func performTweak(field: String, value: String, index: Int?, starID: String,
+                              source: PreviewSource, generation: Int) async {
+        guard isCurrent(starID, generation) else { return }
         if lockReason(starID) != nil { publish(fields: selection?.fields, reason: selection?.reason, starID: starID); return }
-        guard let src = source, let root = root(starID) else { return }
+        guard let root = root(starID) else { return }
         publish(fields: selection?.fields, reason: nil, starID: starID, pending: true)
         var tweak: [String: Any] = ["field": field, "value": value]
         if let index { tweak["index"] = index }
-        let reply = await call(["op": "apply", "root": root.path, "src": srcJSON(src), "tweak": tweak])
+        let reply = await call(["op": "apply", "root": root.path, "src": srcJSON(source), "tweak": tweak])
         guard let reply, isOK(reply) else {
-            publish(fields: selection?.fields, reason: reasonText(reply), starID: starID); return
+            if isCurrent(starID, generation) {
+                publish(fields: selection?.fields, reason: reasonText(reply), starID: starID)
+            }
+            return
         }
-        // The file changed on disk, so the edit is recorded even if the refreshed fields are unreadable.
+        // The file changed on disk, so the edit is recorded even if the selection has moved on
+        // or the refreshed fields are unreadable.
         if let changes = changes(from: reply) {
             histories[starID, default: PreviewEditHistory()].record(changes)
         }
+        guard isCurrent(starID, generation) else { return }
         publish(fields: fields(from: reply) ?? selection?.fields, reason: nil, starID: starID)
     }
 
+    /// Undo/redo act on the Star's history, not on one element, so they only need the Star to still be edited.
     private func replay(undo: Bool, starID: String) async {
-        if lockReason(starID) != nil { return }
-        guard let root = root(starID) else { return }
-        var history = histories[starID] ?? PreviewEditHistory()
+        guard self.starID == starID, lockReason(starID) == nil, let root = root(starID) else { return }
+        let history = histories[starID] ?? PreviewEditHistory()
         guard let changes = undo ? history.nextUndo() : history.nextRedo() else { return }
         let files = changes.map { change in
             ["path": change.path, "expect": undo ? change.after : change.before, "contents": undo ? change.before : change.after]
         }
         let reply = await call(["op": "restore", "root": root.path, "files": files])
         guard isOK(reply) else {
-            publish(fields: selection?.fields, reason: reasonText(reply), starID: starID); return
+            if self.starID == starID { publish(fields: selection?.fields, reason: reasonText(reply), starID: starID) }
+            return
         }
-        if undo { history.didUndo() } else { history.didRedo() }
-        histories[starID] = history
-        publish(fields: selection?.fields, reason: nil, starID: starID)
+        // Writes are serialised, so the stacks are as we read them; mutate in place after the await.
+        if undo { histories[starID, default: PreviewEditHistory()].didUndo() }
+        else { histories[starID, default: PreviewEditHistory()].didRedo() }
+        if self.starID == starID { publish(fields: selection?.fields, reason: nil, starID: starID) }
     }
 
     private func describe(_ text: String, starID: String) async {
