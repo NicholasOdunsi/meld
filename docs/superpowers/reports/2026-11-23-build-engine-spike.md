@@ -353,13 +353,50 @@ Plain clone with no project: `sourceControl.cloneRepository`
 → `{"repository":{"nameWithOwner":"NicholasOdunsi/orion-spike-test-87db",…},"remoteName":"origin","remoteUrl":"https://github.com/NicholasOdunsi/orion-spike-test-87db","branch":"main","status":"pushed"}`.
 `gh repo view` confirmed `"visibility":"PRIVATE"`. Authentication came from the Mac's `gh` sign-in.
 
+## Canvas follow-up (2026-11-24)
+
+A standalone WKWebView probe on this Mac used Orion's App Transport Security settings.
+It checked both the request received by the child server and a JavaScript message from
+the loaded iframe. The HTTPS test parent was served on loopback with a certificate pinned
+by the probe.
+
+| Parent | Child iframe | Result |
+| --- | --- | --- |
+| HTTP loopback | HTTP localhost | Server received the request and the iframe replied |
+| HTTPS loopback | HTTPS loopback | Server received the request and the iframe replied |
+| HTTPS loopback | HTTP localhost or HTTP 127.0.0.1 | No child request or reply for either address |
+
+The Orion Preview app also requested a localhost HTTP page from a temporary sample
+frame in the HTTP demo canvas. The child server returned HTTP 200. This confirmed
+the local request path. The desktop accessibility check timed out, so the test did
+not verify visual rendering. The temporary app and canvas edits were removed from
+the test run.
+
+The existing canvas design frame also sets `frame-src 'none'`, which blocks nested
+frames. All 18 existing frame-document and frame-host tests passed.
+Part 3 needs a separate live preview path that works from an HTTPS canvas. The canvas
+check is independent of the engine gate for Plan A.
+
+## Connector implementation check
+
+The connector installed the reviewed T3 0.1.11 launcher in an isolated scratch home
+with managed Node 24.8.0. The real launcher reports `t3 v0.1.11`. A second call reused
+the install. The connector started the engine on `127.0.0.1`, checked the release
+and protocol in the health descriptor, issued a session, and authenticated a request.
+After stop, connecting to the same port returned `ECONNREFUSED`.
+
+The managed installer downloaded and verified the updated pins for Claude (2.1.331)
+and Codex (0.171.0) in the scratch home. The provider adapter self-test passed. This
+check covered installation and CLI version verification. Live inference with those
+pins remains an integration acceptance check.
+
 ## Not done / pending
 
 - **Step 8 (MCP fallback):** not needed, because RPC worked for Steps 5 and 6. For reference, `/mcp`
   accepts only OAuth sessions with subject `mcp-client`, and it refuses bearer sessions from
   `auth session issue` (per `docs/internals/environment-auth.md`).
-- **Step 11 (canvas iframe in the Mac app):** **Pending owner check**, because it needs a person
-  looking at the GUI.
+- **Step 11 (canvas iframe in the Mac app):** The demo app request and standalone
+  HTTPS probe are recorded above. Visual verification in Orion remains open.
 - **Codex turn:** not run, because the engine marks managed Codex 0.146.0 as `broken`.
 
 ## Cleanup
