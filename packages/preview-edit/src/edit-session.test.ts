@@ -72,6 +72,29 @@ describe("safe paths", () => {
     expect(await inspect(root, { ...tagline, file: "node_modules/x/a.tsx" })).toEqual({ ok: false, reason: "outside-root" });
     expect(await inspect(root, { ...tagline, file: "app/styles.css" })).toEqual({ ok: false, reason: "outside-root" });
   });
+  it("refuses a node_modules path spelled in another case", async () => {
+    await mkdir(path.join(root, "node_modules/x"), { recursive: true });
+    await writeFile(path.join(root, "node_modules/x/a.tsx"), PAGE);
+    expect(await inspect(root, { ...tagline, file: "NODE_MODULES/x/a.tsx" })).toEqual({ ok: false, reason: "outside-root" });
+    expect(await apply(root, { ...tagline, file: "NODE_MODULES/x/a.tsx" }, { field: "text", value: "Hi" })).toEqual({ ok: false, reason: "outside-root" });
+    expect(await readFile(path.join(root, "node_modules/x/a.tsx"), "utf8")).toBe(PAGE);
+  });
+  it("refuses an in-root symlink to a non-JSX file", async () => {
+    await writeFile(path.join(root, "notes.txt"), PAGE);
+    await symlink(path.join(root, "notes.txt"), path.join(root, "app/x.tsx"));
+    expect(await inspect(root, { ...tagline, file: "app/x.tsx" })).toEqual({ ok: false, reason: "outside-root" });
+    expect(await apply(root, { ...tagline, file: "app/x.tsx" }, { field: "text", value: "Hi" })).toEqual({ ok: false, reason: "outside-root" });
+    expect(await readFile(path.join(root, "notes.txt"), "utf8")).toBe(PAGE);
+  });
+  it("refuses an in-root symlink to a file inside node_modules", async () => {
+    await mkdir(path.join(root, "node_modules/pkg"), { recursive: true });
+    await writeFile(path.join(root, "node_modules/pkg/a.tsx"), PAGE);
+    await symlink(path.join(root, "node_modules/pkg/a.tsx"), path.join(root, "app/linked.tsx"));
+    await symlink(path.join(root, "node_modules/pkg"), path.join(root, "app/lib"));
+    expect(await inspect(root, { ...tagline, file: "app/linked.tsx" })).toEqual({ ok: false, reason: "outside-root" });
+    expect(await apply(root, { ...tagline, file: "app/lib/a.tsx" }, { field: "text", value: "Hi" })).toEqual({ ok: false, reason: "outside-root" });
+    expect(await readFile(path.join(root, "node_modules/pkg/a.tsx"), "utf8")).toBe(PAGE);
+  });
   it("refuses a symlink that leaves the root", async () => {
     const elsewhere = await mkdtemp(path.join(os.tmpdir(), "preview-edit-out-"));
     await writeFile(path.join(elsewhere, "page.tsx"), PAGE);

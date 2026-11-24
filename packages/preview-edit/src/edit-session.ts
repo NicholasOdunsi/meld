@@ -33,7 +33,11 @@ async function resolveInRoot(root: string, file: string): Promise<Resolved | nul
   if (candidate.split(path.sep).includes("node_modules") || !JSX_FILE.test(candidate)) return null;
   const real = await fs.realpath(path.join(realRoot, candidate)).catch(() => null);
   if (!real || !real.startsWith(realRoot + path.sep)) return null;
-  return { absolute: real, relative: path.relative(realRoot, real) };
+  // The requested name is not what gets read or written: re-check the resolved target, which may sit in
+  // node_modules or be a non-JSX file reached through a link or a different spelling.
+  const relative = path.relative(realRoot, real);
+  if (relative.split(path.sep).includes("node_modules") || !JSX_FILE.test(relative)) return null;
+  return { absolute: real, relative };
 }
 
 async function writeAtomically(file: string, contents: string): Promise<void> {
@@ -79,11 +83,12 @@ export async function apply(root: string, src: Source, tweak: Tweak): Promise<Ou
   const result = applyTweak({ [found.entry]: found.text }, found.tag, tweak);
   if (!result.ok) return { ok: false, reason: result.reason };
   const after = result.files[found.entry]!;
-  await writeAtomically(found.resolved.absolute, after);
-  // An edit inside the element never moves its opening "<", so the same position still finds it.
+  // An edit inside the element never moves its opening "<", so the same position still finds it. Confirm that
+  // in memory first: the file is written only once the edit can be reported (and so undone).
   const range = findRange(after, found.resolved.relative, src);
   const fields = range ? inspectElement({ [found.entry]: after }, `${found.entry}:${range.start}:${range.end}`) : null;
   if (!fields) return { ok: false, reason: "not-found" };
+  await writeAtomically(found.resolved.absolute, after);
   return { ok: true, fields, changes: [{ path: found.resolved.relative, before: found.text, after }] };
 }
 
