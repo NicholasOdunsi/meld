@@ -21,7 +21,7 @@ final class BuildPreview {
         return server.url
     }
 
-    private var meldRoot: URL {
+    var meldRoot: URL {
         if isStaging,
            let root = Bundle.main.object(forInfoDictionaryKey: "OrionStagingConnectorRoot") as? String {
             return URL(fileURLWithPath: root, isDirectory: true)
@@ -57,9 +57,12 @@ final class BuildPreview {
         catch { return .failure(error) }
     }
 
-    func canPreview(_ starID: String) -> Bool {
-        if case .success = launchPlan(for: starID, port: 3000) { return true }
-        return false
+    func availability(for starID: String) -> (canPreview: Bool, reason: String?) {
+        switch launchPlan(for: starID, port: 3000) {
+        case .success: (true, nil)
+        case .failure(.dependenciesMissing): (false, message(for: .dependenciesMissing))
+        case .failure: (false, nil)
+        }
     }
 
     private func message(for error: PreviewLaunchError) -> String {

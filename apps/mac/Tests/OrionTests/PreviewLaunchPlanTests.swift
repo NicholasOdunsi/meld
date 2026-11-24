@@ -64,8 +64,17 @@ struct PreviewLaunchPlanTests {
             try PreviewLauncher.plan(packageJSON: manifest(#"{"dependencies":{"vite":"8"}}"#), port: 1, files: files([:]))
         }
         #expect(throws: PreviewLaunchError.dependenciesMissing) {
-            try PreviewLauncher.plan(packageJSON: manifest(#"{"scripts":{"dev":"x"}}"#), port: 1, files: files([:]))
+            try PreviewLauncher.plan(
+                packageJSON: manifest(#"{"dependencies":{"some-server":"1"},"scripts":{"dev":"x"}}"#),
+                port: 1, files: files([:]))
         }
+    }
+
+    @Test func aDependencyFreeProjectDoesNotRequireNodeModules() throws {
+        let plan = try PreviewLauncher.plan(
+            packageJSON: manifest(#"{"scripts":{"start":"node server.js"}}"#), port: 3000, files: files([:]))
+        #expect(plan.kind == .npmScript("start"))
+        #expect(plan.environment["PORT"] == "3000")
     }
 
     @Test func aProjectWithNothingToRunIsNotPreviewable() {

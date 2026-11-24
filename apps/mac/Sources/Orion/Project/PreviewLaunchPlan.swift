@@ -62,7 +62,7 @@ enum PreviewLauncher {
         }
         let scripts = manifest["scripts"] as? [String: Any] ?? [:]
         guard let script = ["dev", "start"].first(where: { scripts[$0] is String }) else { throw .noDevScript }
-        guard files.exists("node_modules") else { throw .dependenciesMissing }
+        guard dependencies.isEmpty || files.exists("node_modules") else { throw .dependenciesMissing }
         return PreviewLaunchPlan(kind: .npmScript(script), arguments: [],
                                  environment: ["PORT": String(port), "HOST": "127.0.0.1", "BROWSER": "none"])
     }
