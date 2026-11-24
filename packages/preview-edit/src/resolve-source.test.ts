@@ -38,6 +38,16 @@ describe("firstAppFrame", () => {
   it("skips React internals and dependency bundles and keeps the app frame", () => {
     expect(firstAppFrame(parseUrlFrames(VITE_STACK), ORIGIN)).toEqual({ methodName: "App", url: "http://127.0.0.1:5333/src/App.tsx", line: 2, column: 5 });
   });
+  it("reads Vite creation frames from WKWebView", () => {
+    const stack = [
+      `@${ORIGIN}/node_modules/.vite/deps/react_jsx-dev-runtime.js:196:30`,
+      `App@${ORIGIN}/src/App.tsx:54:72`,
+      `react_stack_bottom_frame@${ORIGIN}/node_modules/.vite/deps/react-dom_client.js:14139:21`,
+    ].join("\n");
+    expect(firstAppFrame(parseUrlFrames(stack), ORIGIN)).toEqual({
+      methodName: "App", url: `${ORIGIN}/src/App.tsx`, line: 54, column: 72,
+    });
+  });
   it("ignores frames from another origin", () => {
     expect(firstAppFrame(parseUrlFrames("    at A (http://cdn.example.com/a.js:1:1)"), ORIGIN)).toBeNull();
   });

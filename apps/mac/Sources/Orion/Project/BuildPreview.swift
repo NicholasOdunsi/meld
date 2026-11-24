@@ -121,7 +121,8 @@ final class BuildPreview {
         do {
             try child.run()
             servers[id] = Server(process: child, url: url)
-            let deadline = ContinuousClock.now + .seconds(30)
+            // The first request can wait for a cold development build.
+            let deadline = ContinuousClock.now + .seconds(60)
             while child.isRunning, ContinuousClock.now < deadline {
                 if await responds(at: url), child.isRunning { return url }
                 try await Task.sleep(for: .milliseconds(500))
@@ -174,7 +175,7 @@ final class BuildPreview {
     }
 
     private func responds(at url: URL) async -> Bool {
-        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 1)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 3)
         request.httpMethod = "HEAD"
         guard let (_, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse else { return false }

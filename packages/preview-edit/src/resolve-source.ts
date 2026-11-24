@@ -11,11 +11,12 @@ export function fromDebugSource(element: Element): ResolvedSource | null {
 }
 
 const URL_FRAME = /^\s*at (?:(\S+) )?\(?(https?:\/\/[^\s)]+?):(\d+):(\d+)\)?\s*$/;
+const WEBKIT_URL_FRAME = /^\s*([^@]*)@(https?:\/\/\S+):(\d+):(\d+)\s*$/;
 
 export function parseUrlFrames(stack: string): UrlFrame[] {
   const frames: UrlFrame[] = [];
   for (const line of stack.split("\n")) {
-    const match = URL_FRAME.exec(line);
+    const match = URL_FRAME.exec(line) ?? WEBKIT_URL_FRAME.exec(line);
     if (match) frames.push({ methodName: match[1] ?? "", url: match[2]!, line: Number(match[3]), column: Number(match[4]) });
   }
   return frames;
