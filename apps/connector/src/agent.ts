@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { arch as osArch, homedir, platform as osPlatform } from "node:os";
 import { pathToFileURL } from "node:url";
 import type { Provider, ProviderStatus } from "@meld/contracts";
@@ -9,6 +10,9 @@ import {
   type ManagedFileSystem,
 } from "./config/connector-config";
 import { connectorPaths, type ConnectorPaths } from "./config/paths";
+import { EngineClient } from "./engine/engine-client";
+import { EngineInstaller } from "./engine/engine-installer";
+import { EngineProcess, nodeEngineSpawner, pickFreePort } from "./engine/engine-process";
 import {
   nodeCommandRunner,
   type CommandRunner,
@@ -35,15 +39,18 @@ import {
 import { RuntimeInstaller } from "./providers/runtime-installer";
 import { removeAbandonedWorkspaces } from "./security/task-workspace";
 import { ensureSecurityShim } from "./security/security-shim";
+import { BuildTaskRunner } from "./tasks/build-task";
 import { TaskExecutor } from "./tasks/task-executor";
 import {
   GatewayClient,
+  type BuildTaskExecutorLike,
   type ProviderSetupLike,
   type TaskExecutorLike,
 } from "./transport/gateway-client";
 
 interface StartableGateway {
   start(): Promise<void>;
+  stop?(): void | Promise<void>;
 }
 
 interface GatewayOptions {
@@ -52,6 +59,7 @@ interface GatewayOptions {
   requestedProvider: Provider;
   createProviderSetup(): ProviderSetupLike;
   createTaskExecutor(): TaskExecutorLike;
+  buildTaskExecutor?: BuildTaskExecutorLike;
   detectProviders(): Promise<ProviderStatus[]>;
   onTerminal(reason: string): void;
 }
@@ -179,15 +187,40 @@ export async function startAgent(
     ((paths: ConnectorPaths) => removeAbandonedWorkspaces(paths));
   await sweep(dependencies.paths);
 
+  const paths = dependencies.paths;
+  const fileSystem = dependencies.managedFileSystem ?? nodeManagedFileSystem;
+  const fetch = dependencies.fetch ?? globalThis.fetch;
+  const installer = new EngineInstaller({ paths, fileSystem, runner: dependencies.runner });
+  const engine = new EngineProcess({
+    paths, fileSystem, runner: dependencies.runner, spawner: nodeEngineSpawner(paths),
+    pickPort: pickFreePort, fetch, sleep: (ms) => sleep(ms),
+  });
+  const client = new EngineClient({
+    getHandle: async () => {
+      if (!engine.current()) await installer.install();
+      return engine.start();
+    },
+    refreshSession: (handle) => engine.refreshSession(handle),
+    fetch,
+  });
+  const buildTaskExecutor = new BuildTaskRunner({ paths, fileSystem, runner: dependencies.runner,
+    getEngine: async () => client });
+  const stopEngine = async () => {
+    client.close();
+    await engine.stop();
+  };
+
   const gatewayOptions: GatewayOptions = {
     gatewayUrl: config.gatewayUrl,
     credentialStore,
     requestedProvider: config.requestedProvider,
     createProviderSetup: graph.createProviderSetup,
     createTaskExecutor: graph.createTaskExecutor,
+    buildTaskExecutor,
     detectProviders: graph.detectProviders,
     onTerminal(reason) {
       diagnostic(`Meld connector stopped: ${reason}.`);
+      void stopEngine().catch(() => diagnostic("Could not stop the build engine."));
     },
   };
   const gateway = dependencies.createGatewayClient
@@ -195,7 +228,13 @@ export async function startAgent(
     : new GatewayClient(gatewayOptions);
 
   await gateway.start();
-  return gateway;
+  return {
+    start: () => gateway.start(),
+    async stop() {
+      await gateway.stop?.();
+      await stopEngine();
+    },
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -204,7 +243,12 @@ function errorMessage(error: unknown): string {
 
 async function main(): Promise<void> {
   try {
-    await startAgent();
+    const gateway = await startAgent();
+    const stop = () => {
+      void Promise.resolve(gateway.stop?.()).catch(() => { process.exitCode = 1; });
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
   } catch (error) {
     console.error(`Meld connector failed: ${errorMessage(error)}`);
     process.exitCode = 1;

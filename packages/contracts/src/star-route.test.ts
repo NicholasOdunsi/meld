@@ -10,7 +10,13 @@ describe("Star route contract", () => {
       { decision: "continue", starTaskId: starId, confidence: 0.95 },
       { decision: "ask", starTaskId: starId, confidence: 0.55 },
       { decision: "new", starTaskId: null, confidence: 0.91 },
-    ]) expect(StarRouteResultSchema.parse(value)).toEqual(value);
+    ]) expect(StarRouteResultSchema.parse(value)).toEqual({ ...value, intent: "answer" });
+  });
+
+  it("carries the build intent", () => {
+    expect(StarRouteResultSchema.parse({ decision: "new", starTaskId: null, confidence: 0.9, intent: "build" }).intent).toBe("build");
+    expect(StarRouteResultSchema.parse({ decision: "new", starTaskId: null, confidence: 0.9, intent: "unsure" }).intent).toBe("unsure");
+    expect(StarRouteResultSchema.safeParse({ decision: "new", starTaskId: null, confidence: 0.9, intent: "deploy" }).success).toBe(false);
   });
 
   it("rejects impossible decisions and confidence", () => {

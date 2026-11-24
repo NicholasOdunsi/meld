@@ -719,7 +719,7 @@ describe("provider setup", () => {
     const context = harness("codex", {
       providerInstallError: new ProviderInstallError(
         "version-mismatch",
-        "The managed codex did not report 0.146.0.",
+        "The managed codex did not report 0.171.0.",
       ),
     });
 

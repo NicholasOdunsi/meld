@@ -31,7 +31,7 @@ final class FakeFrameCommander: FrameCommanding {
 
 @MainActor
 struct FrameModelTests {
-    @Test func mainChatRoutesOnlyWhenThereAreStarCandidates() async {
+    @Test func mainChatRoutesWithOrWithoutStarCandidates() async {
         let model = FrameModel()
         let commander = FakeFrameCommander()
         model.commander = commander
@@ -41,14 +41,22 @@ struct FrameModelTests {
 
         model.updateStream(StreamSnapshot.decode([
             "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
+            "stars": [],
+        ])!)
+        #expect(await model.routeStream("Add a login page", provider: "codex") == .new)
+        #expect(commander.routeCalls.count == 1)
+        #expect((commander.routeCalls.first?.arguments["stars"] as? [[String: String]]) == [])
+
+        model.updateStream(StreamSnapshot.decode([
+            "roomId": "main", "projectId": "p1", "currentUserName": "Ada", "send": ["canSend": true],
             "stars": [["id": "10000000-0000-4000-8000-000000000001", "sourceMessageId": "m1",
                        "title": "Profile", "status": "done", "createdAt": "2026-11-14T10:00:00.000Z"]],
         ])!)
         commander.routeResult = .ask(id: "10000000-0000-4000-8000-000000000001", title: "Profile")
         #expect(await model.routeStream("Please revise it", provider: "codex") == commander.routeResult)
-        #expect(commander.routeCalls.count == 1)
-        #expect(commander.routeCalls[0].arguments["body"] as? String == "Please revise it")
-        #expect(commander.routeCalls[0].arguments["providerOverride"] as? String == "codex")
+        #expect(commander.routeCalls.count == 2)
+        #expect(commander.routeCalls.last?.arguments["body"] as? String == "Please revise it")
+        #expect(commander.routeCalls.last?.arguments["providerOverride"] as? String == "codex")
     }
 
     @Test func openingAScreenFromTheChatOpensCanvasFocusedOnIt() {

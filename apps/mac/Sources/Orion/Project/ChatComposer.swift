@@ -16,6 +16,9 @@ struct ChatComposer: View {
     var star: StreamStar?
     @State private var text = ""
     @State private var sending = false
+    @State private var needsCodeLink = false
+    @State private var linkingCode = false
+    @State private var repository = ""
     @State private var routeChoice: StarRouteChoice?
     @State private var isImporting = false
     @State private var staging = false
@@ -57,6 +60,26 @@ struct ChatComposer: View {
                 StarRouteChoicePill(title: title,
                                     continueAction: { Task { await send(chosenStarTaskID: id, bypassRoute: true) } },
                                     newAction: { Task { await send(bypassRoute: true) } })
+            }
+            if case .unsure(let id) = routeChoice {
+                HStack(spacing: OrionSpacing.xs) {
+                    Text("Build this?")
+                    Button("Build") { Task { await send(chosenStarTaskID: id, bypassRoute: true, buildOverride: true) } }
+                    Button("Answer") { Task { await send(chosenStarTaskID: id, bypassRoute: true) } }
+                }
+            }
+            if needsCodeLink && snapshot?.buildCodeName == nil {
+                VStack(alignment: .leading, spacing: OrionSpacing.xs) {
+                    Text("Link project code")
+                    Button("Choose a folder on this Mac") { Task { await linkCode { await frame.linkBuildFolder(provider: choice?.provider) } } }
+                    TextField("GitHub owner/repository or new repo name", text: $repository)
+                    HStack {
+                        Button("Link GitHub repo") { Task { await linkCode { await frame.linkGitHubBuildCode(repository, create: false, provider: choice?.provider) } } }
+                        Button("Create private repo") { Task { await linkCode { await frame.linkGitHubBuildCode(repository, create: true, provider: choice?.provider) } } }
+                    }
+                    .disabled(repository.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .disabled(linkingCode)
             }
             if let notice = notices.current {
                 ComposerStatusPill(notice: notice) { notices.dismiss() }
@@ -149,7 +172,11 @@ struct ChatComposer: View {
             if !focused { isUserOpened = false }
         }
         .onChange(of: text) { _, _ in routeChoice = nil }
-        .onChange(of: snapshot?.roomID) { _, _ in routeChoice = nil }
+        .onChange(of: snapshot?.roomID) { _, _ in
+            routeChoice = nil
+            needsCodeLink = false
+            repository = ""
+        }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             Task { await stage(urls) }
@@ -285,7 +312,19 @@ struct ChatComposer: View {
         }
     }
 
-    private func send(chosenStarTaskID: String? = nil, bypassRoute: Bool = false) async {
+    private func linkCode(_ action: () async -> Bool) async {
+        linkingCode = true
+        let queued = await action()
+        linkingCode = false
+        if queued {
+            notices.show("Linking code on your Mac. Your draft is saved.", kind: .hint)
+        } else if let message = frame.errorMessage {
+            notices.show(message, kind: .error)
+            frame.errorMessage = nil
+        }
+    }
+
+    private func send(chosenStarTaskID: String? = nil, bypassRoute: Bool = false, buildOverride: Bool = false) async {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty || !attachments.isEmpty, !sending else { return }
         guard let snapshot else { return }
@@ -298,6 +337,7 @@ struct ChatComposer: View {
         notices.dismiss()
         let selection = frame.selectedStreamModel
         var destination = star?.id ?? chosenStarTaskID
+        var build = buildOverride || star?.build != nil
         if star == nil && !bypassRoute && !body.isEmpty {
             let result = await frame.routeStream(body, provider: selection.provider)
             guard frame.visibleStream?.roomID == snapshot.roomID,
@@ -308,14 +348,30 @@ struct ChatComposer: View {
             switch result {
             case .new: break
             case .continue(let id, _): destination = id
-            case .ask:
+            case .build(let id):
+                build = true
+                destination = snapshot.stars.contains(where: { $0.id == id && $0.build != nil }) ? id : nil
+            case .ask, .unsure:
                 routeChoice = result
                 sending = false
                 return
             }
         }
+        if build && snapshot.buildCodeName == nil {
+            needsCodeLink = true
+            sending = false
+            return
+        }
+        if build && !attachments.isEmpty {
+            notices.show("Send a text prompt to start a build.", kind: .error)
+            sending = false
+            return
+        }
+        if build && star == nil && !snapshot.stars.contains(where: { $0.id == destination && $0.build != nil }) {
+            destination = nil
+        }
         let success = await frame.sendStream(body, provider: selection.provider, model: selection.model,
-                                             attachmentIDs: attachments.map(\.id), starTaskID: destination)
+                                             attachmentIDs: attachments.map(\.id), starTaskID: destination, build: build)
         sending = false
         if success {
             text = ""; attachments = []

@@ -1,7 +1,7 @@
 "use client";
 
 import "@excalidraw/excalidraw/index.css";
-import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements, getSceneVersion, newElementWith, restoreElements, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
+import { CaptureUpdateAction, Excalidraw, convertToExcalidrawElements, getSceneVersion, newElementWith, restoreElements, sceneCoordsToViewportCoords, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
@@ -80,6 +80,9 @@ declare global {
       addFrames: (count: number, key: FixtureKey) => void;
       setScreen: (id: string, html: string) => void;
       focusStar: (taskId: string, title: string) => boolean;
+      previewFrame: (taskId: string, title: string, focus: boolean) => {
+        x: number; y: number; width: number; height: number; zoom: number; interactive: boolean;
+      } | null;
       focusScreen: (designScreenId: string) => Promise<boolean>;
       focusAll: () => boolean;
     };
@@ -405,6 +408,27 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             if (current) next.scrollToContent(current, { fitToViewport: true, viewportZoomFactor: 0.75, animate: false });
           });
           return true;
+        },
+        previewFrame: (taskId, title, focus) => {
+          if (!readyToFocus()) return null;
+          const state = next.getAppState();
+          const frame = findStarSection(next.getSceneElements(), taskId);
+          if (!frame) {
+            if (focus && access === "edit") ensureStarSection(next, taskId, title, sectionColor);
+            return null;
+          }
+          if (focus && state.width > 160 && state.height > 112) {
+            const zoom = Math.max(0.1, Math.min(1, (state.width - 160) / frame.width, (state.height - 112) / frame.height));
+            next.updateScene({ appState: {
+              zoom: { value: zoom as typeof state.zoom.value },
+              scrollX: (state.width + 64) / (2 * zoom) - frame.x - frame.width / 2,
+              scrollY: state.height / (2 * zoom) - frame.y - frame.height / 2,
+            } });
+          }
+          const current = next.getAppState();
+          const { x, y } = sceneCoordsToViewportCoords({ sceneX: frame.x, sceneY: frame.y }, current);
+          return { x, y, width: frame.width, height: frame.height, zoom: current.zoom.value,
+            interactive: current.activeTool.type === "selection" };
         },
         focusAll: () => {
           if (!readyToFocus()) return false;

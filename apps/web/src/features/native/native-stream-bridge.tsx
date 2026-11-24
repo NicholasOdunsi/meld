@@ -8,6 +8,7 @@ import {
 } from "@/features/ai/room-task-status";
 import { discardStagedRoomAttachment, listRoomTaskStatuses, postMessage, stageRoomAttachment } from "@/features/rooms/actions";
 import { listRoomStarMetadata, renameRoomConstellation, renameRoomStar, setRoomMessageStars, setRoomStarConstellation } from "@/features/rooms/star-actions";
+import { enqueueCodeLink, readRoomBuilds, respondToBuildApproval, sendBuildMessage } from "@/features/rooms/build-actions";
 import { routeMessageToStar } from "@/features/rooms/star-route-actions";
 import type { RoomConstellation, RoomStarMetadata } from "@/features/rooms/star-types";
 import { reconcileMessage } from "@/features/rooms/reconcile-message";
@@ -72,6 +73,7 @@ export function NativeStreamBridge({
   const [localFollowups, setLocalFollowups] = useState<Record<string, { taskId: string; title: string }>>({});
   const [heldClientIds, setHeldClientIds] = useState<string[]>([]);
   const [constellations, setConstellations] = useState<RoomConstellation[]>([]);
+  const [buildState, setBuildState] = useState<Awaited<ReturnType<typeof readRoomBuilds>> | null>(null);
   const [screenRows, setScreenRows] = useState<ScreenFeedRow[]>([]);
   const [failedDesignProposalId, setFailedDesignProposalId] = useState<string | null>(null);
   const pollerRef = useRef<RoomTaskStatusPoller | null>(null);
@@ -82,6 +84,14 @@ export function NativeStreamBridge({
   const reconcile = useCallback((incoming: RoomMessage) => {
     setMessages((current) => reconcileMessage(current, incoming));
   }, []);
+  const refreshBuilds = useCallback(async () => {
+    try { setBuildState(await readRoomBuilds(roomId)); } catch { /* Chat still works while build state is unavailable. */ }
+  }, [roomId]);
+  useEffect(() => {
+    let current = true;
+    readRoomBuilds(roomId).then((state) => { if (current) setBuildState(state); }).catch(() => { /* Chat still works while build state is unavailable. */ });
+    return () => { current = false; };
+  }, [roomId]);
   const refreshStars = useCallback(async () => {
     try {
       const data = await listRoomStarMetadata(roomId);
@@ -104,7 +114,7 @@ export function NativeStreamBridge({
   useEffect(() => {
     const poller = new RoomTaskStatusPoller({
       fetchStatuses: () => listRoomTaskStatuses(roomId),
-      onStatuses: (statuses) => { setTaskStatuses(statuses); void refreshStars(); void refreshScreens(); },
+      onStatuses: (statuses) => { setTaskStatuses(statuses); void refreshStars(); void refreshScreens(); void refreshBuilds(); },
       // A failed read (for example revoked access) stops the poll; the chat
       // keeps working and replies still arrive over the subscription.
       onError: () => {},
@@ -115,7 +125,7 @@ export function NativeStreamBridge({
       poller.stop();
       pollerRef.current = null;
     };
-  }, [roomId, refreshStars, refreshScreens]);
+  }, [roomId, refreshStars, refreshScreens, refreshBuilds]);
 
   useEffect(() => {
     const processProposals = () => { for (const message of messages) {
@@ -179,13 +189,15 @@ export function NativeStreamBridge({
         constellations,
         artifacts,
         screenRows,
+        builds: buildState?.stars,
+        buildCodeName: buildState?.link?.displayName,
         readiness,
     });
     return failedDesignProposalId
       ? { ...built, activity: [...built.activity, { taskId: failedDesignProposalId, starId: null, phase: "failed" as const, screenName: null, retryable: true }] }
       : built;
   },
-    [roomId, projectId, currentUser, participants, visibleMessages, taskStatuses, starMetadata, constellations, artifacts, screenRows, readiness, failedDesignProposalId],
+    [roomId, projectId, currentUser, participants, visibleMessages, taskStatuses, starMetadata, constellations, artifacts, screenRows, readiness, failedDesignProposalId, buildState],
   );
 
   useEffect(() => {
@@ -214,9 +226,29 @@ export function NativeStreamBridge({
   useEffect(() => {
     return registerStreamHandler({
       route: async (input) => {
-        if (input.roomId !== roomId) return { status: "route", decision: "new", starTaskId: null, title: null };
+        if (input.roomId !== roomId) return { status: "route", decision: "new", starTaskId: null, title: null, intent: "answer" };
         const result = await routeMessageToStar(input);
         return { status: "route", ...result };
+      },
+      linkBuildCode: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          await enqueueCodeLink(input);
+          pollerRef.current?.notifyQueued();
+          return { status: "ok" };
+        } catch {
+          return { status: "error", message: "Could not link that repository on your Mac." };
+        }
+      },
+      answerBuildApproval: async (input) => {
+        if (input.roomId !== roomId) return SEND_FAILED;
+        try {
+          await respondToBuildApproval(input);
+          pollerRef.current?.notifyQueued();
+          return { status: "ok" };
+        } catch {
+          return { status: "error", message: "That approval is no longer available." };
+        }
       },
       retryDesignProposal: async (input) => {
         if (input.roomId !== roomId || !messages.some((m) => m.id === input.messageId && m.proposedAction?.kind === "design_screen")) return SEND_FAILED;
@@ -229,6 +261,17 @@ export function NativeStreamBridge({
         const body = input.body.trim();
         if (input.roomId !== roomId || (body.length === 0 && !input.attachmentIds?.length)) return SEND_FAILED;
         try {
+          if (input.build) {
+            if (input.attachmentIds?.length) return { status: "error", message: "Send a text prompt to start a build." };
+            const result = await sendBuildMessage({
+              roomId, body, clientId: crypto.randomUUID(), starTaskId: input.starTaskId ?? undefined,
+              provider: input.providerOverride ?? undefined, model: input.modelOverride ?? undefined,
+            });
+            if (result.status === "link_required") return { status: "error", message: "Link your project’s code first." };
+            pollerRef.current?.notifyQueued();
+            void refreshBuilds();
+            return { status: "ok" };
+          }
           const designBrief = !input.starTaskId && !input.attachmentIds?.length ? parseDesignMention(body) : null;
           if (designBrief) {
             const built = await generateDesignScreen({ roomId, instruction: designBrief });
@@ -338,7 +381,7 @@ export function NativeStreamBridge({
         } catch { return { status: "error", message: "Could not rename Constellation." }; }
       },
     });
-  }, [roomId, messages, reconcile, refreshStars, refreshScreens]);
+  }, [roomId, messages, reconcile, refreshStars, refreshScreens, refreshBuilds]);
 
   return null;
 }

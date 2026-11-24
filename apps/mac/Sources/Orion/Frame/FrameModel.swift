@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OrionAppCore
@@ -12,6 +13,41 @@ import UniformTypeIdentifiers
 final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
+    let buildPreview = BuildPreview()
+    struct CanvasPreview: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let url: URL
+    }
+
+    private var previewStars: [String: [String: String]] = [:]
+    private(set) var canvasPreviewFocus: (starID: String, requestID: UUID)?
+
+    var canvasPreviews: [CanvasPreview] {
+        guard projectPanel == .canvas, let room = snapshot?.currentRoomID,
+              let stars = previewStars[room] else { return [] }
+        return stars.keys.sorted().compactMap { id in
+            guard let url = buildPreview.runningURL(for: id), let title = stars[id] else { return nil }
+            return CanvasPreview(id: id, title: title, url: url)
+        }
+    }
+
+    func previewBuildInCanvas(_ starID: String) async {
+        guard let stream = visibleStream, let star = stream.stars.first(where: { $0.id == starID }) else { return }
+        guard await buildPreview.start(starID) != nil else { return }
+        previewStars[stream.roomID, default: [:]][starID] = star.title
+        guard snapshot?.currentRoomID == stream.roomID else { return }
+        if projectPanel != .canvas { togglePanel(.canvas) }
+        canvasStarID = starID
+        canvasScreenID = nil
+        canvasPreviewFocus = (starID, UUID())
+    }
+
+    func openBuildInBrowser(_ starID: String) async {
+        guard let url = await buildPreview.start(starID) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     var projectPanel: ProjectPanel?
     var isCanvasExpanded = false
     private(set) var canvasStarID: String?
@@ -152,6 +188,7 @@ final class FrameModel {
     /// Constellations, so the Constellations icon while a Star is open goes
     /// back to the list rather than closing the panel.
     func togglePanel(_ panel: ProjectPanel) {
+        canvasPreviewFocus = nil
         let next: ProjectPanel? = projectPanel == panel ? nil : panel
         let enteringCanvasFromStar = next == .canvas && projectPanel == .star ? openStarID : nil
         if projectPanel == .canvas, next != .canvas {
@@ -182,6 +219,7 @@ final class FrameModel {
     func openStar(_ id: String) {
         guard visibleStream?.stars.contains(where: { $0.id == id }) == true else { return }
         if projectPanel == .canvas {
+            canvasPreviewFocus = nil
             canvasStarID = id
             canvasScreenID = nil
             return
@@ -201,11 +239,13 @@ final class FrameModel {
 
     func showProjectCanvas() {
         guard projectPanel == .canvas else { return }
+        canvasPreviewFocus = nil
         canvasStarID = nil
         canvasScreenID = nil
     }
 
     func openScreenInCanvas(_ id: String) {
+        canvasPreviewFocus = nil
         if projectPanel != .canvas { togglePanel(.canvas) }
         canvasStarID = nil
         canvasScreenID = id
@@ -298,14 +338,67 @@ final class FrameModel {
     }
 
     func sendStream(_ body: String, provider: String?, model: String?, attachmentIDs: [String] = [],
-                    starTaskID: String? = nil) async -> Bool {
+                    starTaskID: String? = nil, build: Bool = false) async -> Bool {
         guard let stream = visibleStream else { return false }
         let result = await call(
-            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds, starTaskId, starTitle}) : null;",
+            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds, starTaskId, starTitle, build}) : null;",
             arguments: ["roomId": stream.roomID, "body": body,
                         "providerOverride": provider ?? NSNull(), "modelOverride": model ?? NSNull(),
-                        "attachmentIds": attachmentIDs, "starTaskId": starTaskID ?? NSNull(),
+                        "attachmentIds": attachmentIDs, "starTaskId": starTaskID ?? NSNull(), "build": build,
                         "starTitle": stream.stars.first(where: { $0.id == starTaskID })?.title ?? NSNull()]
+        )
+        return result.succeeded
+    }
+
+    func linkBuildFolder(provider: String?) async -> Bool {
+        guard let roomID = visibleStream?.roomID else { return false }
+        let picker = NSOpenPanel()
+        picker.canChooseFiles = false
+        picker.canChooseDirectories = true
+        picker.allowsMultipleSelection = false
+        guard await picker.begin() == .OK, let folder = picker.url,
+              visibleStream?.roomID == roomID else { return false }
+        do {
+            let meld = URL.applicationSupportDirectory.appending(path: "Meld", directoryHint: .isDirectory)
+            let config = try Data(contentsOf: meld.appending(path: "config.json"))
+            struct DeviceConfig: Decodable { let deviceId: UUID }
+            let deviceID = try JSONDecoder().decode(DeviceConfig.self, from: config).deviceId.uuidString.lowercased()
+            let selection = UUID().uuidString.lowercased()
+            let directory = meld.appending(path: "engine/selections", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            let record = directory.appending(path: "\(selection).json")
+            try JSONEncoder().encode(["root": folder.path]).write(to: record, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path)
+            let result = await linkBuildCode(roomID: roomID, provider: provider, deviceID: deviceID,
+                                             target: ["kind": "folder", "localSelectionId": selection])
+            if !result { try? FileManager.default.removeItem(at: record) }
+            return result
+        } catch {
+            errorMessage = "Connect this Mac before linking a local folder."
+            return false
+        }
+    }
+
+    func linkGitHubBuildCode(_ repository: String, create: Bool, provider: String?) async -> Bool {
+        guard let roomID = visibleStream?.roomID else { return false }
+        return await linkBuildCode(roomID: roomID, provider: provider, deviceID: nil,
+                                   target: ["kind": create ? "new_github" : "github", "repository": repository])
+    }
+
+    private func linkBuildCode(roomID: String, provider: String?, deviceID: String?, target: [String: String]) async -> Bool {
+        let result = await call(
+            "const f = window.__orionStream; return f?.linkBuildCode ? await f.linkBuildCode({roomId, provider, deviceId: deviceId ?? undefined, target}) : null;",
+            arguments: ["roomId": roomID, "provider": provider ?? NSNull(), "deviceId": deviceID ?? NSNull(), "target": target]
+        )
+        return result.succeeded
+    }
+
+    func answerBuildApproval(starID: String, requestID: String, approve: Bool) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        let result = await call(
+            "const f = window.__orionStream; return f?.answerBuildApproval ? await f.answerBuildApproval({roomId, starTaskId, requestId, decision}) : null;",
+            arguments: ["roomId": stream.roomID, "starTaskId": starID, "requestId": requestID, "decision": approve ? "accept" : "decline"]
         )
         return result.succeeded
     }
@@ -314,7 +407,6 @@ final class FrameModel {
         guard let stream = visibleStream, let commander else { return .new }
         let stars = stream.stars.sorted { $0.createdAt > $1.createdAt }.prefix(5)
             .map { ["id": $0.id, "title": $0.title] }
-        guard !stars.isEmpty else { return .new }
         return await commander.callStarRoute(
             "const f = window.__orionStream; return f ? await f.route({roomId, body, providerOverride, stars}) : null;",
             arguments: ["roomId": stream.roomID, "body": body,
@@ -364,6 +456,9 @@ final class FrameModel {
 
     /// Signed out (or on a page outside Orion's frame): hide the sidebar.
     func pageDidLeaveFrame() {
+        buildPreview.stop()
+        previewStars.removeAll()
+        canvasPreviewFocus = nil
         snapshot = nil
         pendingDestination = nil
         stream = nil

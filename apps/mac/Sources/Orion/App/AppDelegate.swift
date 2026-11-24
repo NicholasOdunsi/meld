@@ -125,5 +125,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The real app lives on in the menu bar; the preview has no menu bar
     /// item, so closing its window quits it.
+    func applicationWillTerminate(_ notification: Notification) {
+        frameModel.buildPreview.stop()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { isPreview }
 }

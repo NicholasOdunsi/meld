@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RouteIntentSchema } from "./build";
 import { DesignProfileSchema } from "./design-profile";
 import { FlowDocumentSchema } from "./user-flow";
 import { PRDDocumentSchema } from "./prd";
@@ -93,6 +94,9 @@ export const AITaskKindSchema = z.enum([
   "user_flow_assist",
   "design_profile_distill",
   "design_screen_generate",
+  "code_link",
+  "build_turn",
+  "build_approval",
 ]);
 export type AITaskKind = z.infer<typeof AITaskKindSchema>;
 
@@ -100,6 +104,7 @@ export const StarRouteResultSchema = z.object({
   decision: z.enum(["continue", "new", "ask"]),
   starTaskId: z.string().uuid().nullable(),
   confidence: z.number().min(0).max(1),
+  intent: RouteIntentSchema.default("answer"),
 }).strict().superRefine((value, context) => {
   if (value.decision !== "new" && value.starTaskId === null) {
     context.addIssue({ code: "custom", message: "A Star decision needs a Star id." });

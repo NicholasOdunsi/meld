@@ -43,7 +43,7 @@ const FORBIDDEN_PARENT_VARIABLES = [
 
 function fakeProviderScript(provider: Provider): string {
   const version =
-    provider === "codex" ? "codex-cli 0.146.0" : "2.1.220 (Claude Code)";
+    provider === "codex" ? "codex-cli 0.171.0" : "2.1.331 (Claude Code)";
   const statusFirst = provider === "codex" ? "login" : "auth";
   const okAuthStatus =
     provider === "codex"

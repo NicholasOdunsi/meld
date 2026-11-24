@@ -15,6 +15,18 @@ struct ProjectScreen: View {
     @State private var artifactFilter: StreamArtifact.Kind?
     @State private var previewArtifact: StreamArtifact?
     @State private var previewFileURL: URL?
+    @State private var previewFrames: [String: PreviewFrame] = [:]
+    @State private var appliedPreviewFocus: UUID?
+
+    private struct PreviewFrame: Decodable, Equatable {
+        let id: String
+        let x: CGFloat
+        let y: CGFloat
+        let width: CGFloat
+        let height: CGFloat
+        let zoom: CGFloat
+        let interactive: Bool
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -54,21 +66,7 @@ struct ProjectScreen: View {
                             PanelResizeHandle(frame: frame, detailWidth: geometry.size.width)
                         }
                 }
-                VStack(spacing: 0) {
-                    if frame.projectPanel == .artifacts && openArtifactID != nil {
-                        Button("‹ Artifacts") {
-                            openArtifactID = nil
-                            if let room = frame.visibleStream?.roomID,
-                               let workspace = frame.snapshot?.workspaceID {
-                                frame.openArtifactPath("/\(workspace)/rooms/\(room)?tab=conversation")
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(OrionSpacing.md)
-                    }
-                    WebViewHost(webView: webView, allowsSwipeNavigation: false)
-                        .frame(maxHeight: .infinity)
-                }
+                webPanel
                     .frame(width: showsWeb ? split.panelWidth : 0)
                     .opacity(showsWeb ? 1 : 0)
                     .allowsHitTesting(showsWeb)
@@ -86,6 +84,7 @@ struct ProjectScreen: View {
             if panel != .artifacts { openArtifactID = nil; previewArtifact = nil }
         }
         .task(id: canvasFocusKey) { await syncCanvasFocus() }
+        .task(id: previewTrackingKey) { await trackPreviewFrames() }
         .quickLookPreview($previewFileURL)
         .overlay {
             if let kind = starDialog {
@@ -98,6 +97,118 @@ struct ProjectScreen: View {
                         .id(kind)
                 }
             }
+        }
+    }
+
+    private var webPanel: some View {
+        VStack(spacing: 0) {
+            if frame.projectPanel == .artifacts && openArtifactID != nil {
+                Button("‹ Artifacts") {
+                    openArtifactID = nil
+                    if let room = frame.visibleStream?.roomID,
+                       let workspace = frame.snapshot?.workspaceID {
+                        frame.openArtifactPath("/\(workspace)/rooms/\(room)?tab=conversation")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(OrionSpacing.md)
+            }
+            WebViewHost(webView: webView, allowsSwipeNavigation: false)
+                .frame(maxHeight: .infinity)
+                .overlay(alignment: .topLeading) { positionedPreview }
+                .clipped()
+        }
+    }
+
+    private var positionedPreview: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(frame.canvasPreviews) { preview in
+                if let box = previewFrames[preview.id] {
+                    livePreview(preview)
+                        .frame(width: box.width - 4, height: box.height - 4)
+                        .clipShape(.rect(cornerRadius: OrionRadius.medium))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: OrionRadius.medium)
+                                .strokeBorder(.quaternary, lineWidth: 1)
+                                .allowsHitTesting(false)
+                        }
+                        .scaleEffect(box.zoom, anchor: .topLeading)
+                        .offset(x: box.x + 2 * box.zoom, y: box.y + 2 * box.zoom)
+                        .allowsHitTesting(box.interactive)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func livePreview(_ preview: FrameModel.CanvasPreview) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: OrionSpacing.xs) {
+                Image(systemName: "chevron.left.forwardslash.chevron.right")
+                    .accessibilityHidden(true)
+                Text(preview.title)
+                    .lineLimit(1)
+                Spacer(minLength: OrionSpacing.xs)
+                Button {
+                    NSWorkspace.shared.open(preview.url)
+                } label: {
+                    Label("Open in Browser", systemImage: "globe")
+                        .labelStyle(.iconOnly)
+                        .padding(OrionSpacing.xs)
+                }
+                .buttonStyle(.plain)
+                .help("Open in Browser")
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(OrionColor.dayBreakBlue.color)
+            .padding(.horizontal, OrionSpacing.sm)
+            .background(.regularMaterial)
+            CanvasLivePreview(url: preview.url)
+        }
+    }
+
+    private var previewTrackingKey: String {
+        let ids = frame.canvasPreviews.map(\.id)
+        return (ids + [frame.canvasPreviewFocus?.requestID.uuidString ?? ""]).joined(separator: ":")
+    }
+
+    @MainActor
+    private func trackPreviewFrames() async {
+        let previews = frame.canvasPreviews
+        guard !previews.isEmpty, let roomID = frame.snapshot?.currentRoomID else {
+            previewFrames = [:]
+            return
+        }
+        let focus = frame.canvasPreviewFocus
+        let stars = previews.map { ["id": $0.id, "title": $0.title] }
+        while !Task.isCancelled {
+            let focusID = appliedPreviewFocus == focus?.requestID ? "" : focus?.starID ?? ""
+            let result = try? await webView.callAsyncJavaScript(
+                """
+                const board = window.__orionBoard;
+                if (board?.roomId !== roomId || !board.previewFrame) return [];
+                return stars.flatMap(star => {
+                    const bounds = board.previewFrame(star.id, star.title, star.id === focusId);
+                    return bounds ? [{id: star.id, ...bounds}] : [];
+                });
+                """,
+                arguments: ["roomId": roomID, "stars": stars, "focusId": focusID],
+                in: nil, contentWorld: .page
+            )
+            if Task.isCancelled { return }
+            if let json = result as? [[String: Any]],
+               let data = try? JSONSerialization.data(withJSONObject: json),
+               let frames = try? JSONDecoder().decode([PreviewFrame].self, from: data) {
+                let valid = frames.filter {
+                    [$0.x, $0.y, $0.width, $0.height, $0.zoom].allSatisfy(\.isFinite)
+                        && (32...8192).contains($0.width) && (32...8192).contains($0.height)
+                        && (0.1...30).contains($0.zoom)
+                }
+                let next = Dictionary(valid.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                if previewFrames != next { previewFrames = next }
+                if next[focusID] != nil { appliedPreviewFocus = focus?.requestID }
+            }
+            try? await Task.sleep(for: .milliseconds(60))
         }
     }
 
@@ -116,6 +227,7 @@ struct ProjectScreen: View {
     @MainActor
     private func syncCanvasFocus() async {
         guard frame.projectPanel == .canvas, let stream = frame.visibleStream else { return }
+        if let request = frame.canvasPreviewFocus, request.starID == frame.canvasStarID { return }
         let roomID = stream.roomID
         let succeeded: Bool
         if let screenID = frame.canvasScreenID {
@@ -473,6 +585,9 @@ struct ProjectScreen: View {
                                          Task { await frame.setMessageStars(message.id, star: target, mode: mode) }
                                      }, openStar: { frame.openStar($0) }, avatarGap: OrionSpacing.xs)
                         .id(message.id)
+                }
+                if let build = star.build {
+                    StreamBuildSummary(frame: frame, starID: star.id, build: build)
                 }
                 ForEach(stream.screens(forStar: star.id)) { screen in
                     ScreenCard(screen: screen, store: .shared) { frame.openScreenInCanvas($0.id) }

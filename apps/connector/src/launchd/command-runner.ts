@@ -17,6 +17,7 @@ export interface CommandResult {
  */
 export interface CommandOptions {
   cwd?: string;
+  signal?: AbortSignal;
   env?: Readonly<Record<string, string>>;
 }
 
@@ -38,6 +39,7 @@ export const nodeCommandRunner: CommandRunner = {
           encoding: "utf8",
           maxBuffer: MAX_COMMAND_OUTPUT_BYTES,
           shell: false,
+          ...(options?.signal === undefined ? {} : { signal: options.signal }),
           ...(options?.cwd === undefined ? {} : { cwd: options.cwd }),
           ...(options?.env === undefined ? {} : { env: { ...options.env } }),
         },
