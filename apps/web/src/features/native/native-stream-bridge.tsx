@@ -214,7 +214,7 @@ export function NativeStreamBridge({
   useEffect(() => {
     return registerStreamHandler({
       route: async (input) => {
-        if (input.roomId !== roomId) return { status: "route", decision: "new", starTaskId: null, title: null };
+        if (input.roomId !== roomId) return { status: "route", decision: "new", starTaskId: null, title: null, intent: "answer" };
         const result = await routeMessageToStar(input);
         return { status: "route", ...result };
       },

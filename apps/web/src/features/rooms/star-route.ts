@@ -1,6 +1,6 @@
 import "server-only";
 
-import { StarRouteResultSchema, type Provider } from "@meld/contracts";
+import { StarRouteResultSchema, type Provider, type RouteIntent } from "@meld/contracts";
 import { z } from "zod";
 import { resolveAgentReadiness } from "@/features/ai/agent-readiness";
 import { cancelAITask } from "@/features/ai/task-service";
@@ -15,23 +15,25 @@ const RouteInputSchema = z.object({
 });
 
 export type StarRouteChoice =
-  | { decision: "new"; starTaskId: null; title: null }
-  | { decision: "continue" | "ask"; starTaskId: string; title: string };
+  | { decision: "new"; starTaskId: null; title: null; intent: RouteIntent }
+  | { decision: "continue" | "ask"; starTaskId: string; title: string; intent: RouteIntent };
 
-const NEW_STAR: StarRouteChoice = { decision: "new", starTaskId: null, title: null };
+const NEW_STAR: StarRouteChoice = { decision: "new", starTaskId: null, title: null, intent: "answer" };
 const ROUTE_DEADLINE_MS = 3_000;
 
 export function validatedRouteChoice(result: unknown, candidates: readonly { id: string; title: string }[]): StarRouteChoice {
   const parsed = StarRouteResultSchema.safeParse(result);
-  if (!parsed.success || parsed.data.decision === "new") return NEW_STAR;
+  if (!parsed.success) return NEW_STAR;
+  const intent = parsed.data.intent;
+  if (parsed.data.decision === "new") return { ...NEW_STAR, intent };
   const star = candidates.find((item) => item.id === parsed.data.starTaskId);
-  if (!star) return NEW_STAR;
-  return { decision: parsed.data.decision, starTaskId: star.id, title: star.title };
+  if (!star) return { ...NEW_STAR, intent };
+  return { decision: parsed.data.decision, starTaskId: star.id, title: star.title, intent };
 }
 
 export async function routeMainChatMessage(input: unknown): Promise<StarRouteChoice> {
   const parsed = RouteInputSchema.safeParse(input);
-  if (!parsed.success || parsed.data.stars.length === 0) return NEW_STAR;
+  if (!parsed.success) return NEW_STAR;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const work = performRoute(parsed.data);
   try {
@@ -61,7 +63,6 @@ async function performRoute(input: z.infer<typeof RouteInputSchema>): Promise<St
     const candidates = input.stars
       .filter((star) => allowed.has(star.id))
       .map((star) => ({ id: star.id, title: allowed.get(star.id)! }));
-    if (candidates.length === 0) return NEW_STAR;
     const selected = readiness.providers.find((item) => item.provider === input.providerOverride)
       ?? readiness.providers.find((item) => item.provider === readiness.defaultProvider);
     if (!selected) return NEW_STAR;
@@ -77,7 +78,6 @@ async function performRoute(input: z.infer<typeof RouteInputSchema>): Promise<St
     if (created.error) return NEW_STAR;
     const task = z.object({ id: z.string().uuid() }).parse(created.data);
     taskId = task.id;
-    if (Date.now() >= deadline) return NEW_STAR;
     while (Date.now() < deadline) {
       const { data, error } = await supabase.rpc("read_star_route_result", { target_task_id: task.id });
       if (error) break;

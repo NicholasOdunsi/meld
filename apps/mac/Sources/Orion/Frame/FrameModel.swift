@@ -314,7 +314,6 @@ final class FrameModel {
         guard let stream = visibleStream, let commander else { return .new }
         let stars = stream.stars.sorted { $0.createdAt > $1.createdAt }.prefix(5)
             .map { ["id": $0.id, "title": $0.title] }
-        guard !stars.isEmpty else { return .new }
         return await commander.callStarRoute(
             "const f = window.__orionStream; return f ? await f.route({roomId, body, providerOverride, stars}) : null;",
             arguments: ["roomId": stream.roomID, "body": body,

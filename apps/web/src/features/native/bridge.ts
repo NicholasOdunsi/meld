@@ -1,3 +1,5 @@
+import type { RouteIntent } from "@meld/contracts";
+
 export type NativeMessage =
   | { v: 1; type: "ready"; workspaceId: string | null }
   | { v: 1; type: "notify"; title: string; body: string; path: string }
@@ -148,7 +150,7 @@ export type StreamHandlers = {
 
 export type FrameResult =
   | { status: "ok"; path?: string }
-  | { status: "route"; decision: "continue" | "new" | "ask"; starTaskId: string | null; title: string | null }
+  | { status: "route"; decision: "continue" | "new" | "ask"; starTaskId: string | null; title: string | null; intent: RouteIntent }
   | { status: "error"; message: string };
 
 // What the native frame can ask the page to do. The page runs these through

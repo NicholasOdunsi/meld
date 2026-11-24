@@ -33,7 +33,7 @@ beforeEach(() => {
 describe("Star route validation", () => {
   it("keeps a valid continuation and asks on uncertainty", () => {
     expect(validatedRouteChoice({ decision: "continue", starTaskId: stars[0].id, confidence: 0.9 }, stars))
-      .toEqual({ decision: "continue", starTaskId: stars[0].id, title: "Profile screen" });
+      .toEqual({ decision: "continue", starTaskId: stars[0].id, title: "Profile screen", intent: "answer" });
     expect(validatedRouteChoice({ decision: "ask", starTaskId: stars[0].id, confidence: 0.5 }, stars).decision)
       .toBe("ask");
   });
@@ -44,14 +44,18 @@ describe("Star route validation", () => {
       { decision: "ask", starTaskId: null, confidence: 0.5 },
       { decision: "new", starTaskId: null, confidence: 0.9 },
       null,
-    ]) expect(validatedRouteChoice(result, stars)).toEqual({ decision: "new", starTaskId: null, title: null });
+    ]) expect(validatedRouteChoice(result, stars)).toEqual({ decision: "new", starTaskId: null, title: null, intent: "answer" });
   });
 });
 
 describe("pre-send Star routing", () => {
-  it("does not create a task when there are no candidates", async () => {
-    expect(await routeMainChatMessage({ roomId, body: "Hello", stars: [] })).toEqual({ decision: "new", starTaskId: null, title: null });
-    expect(mocks.createClient).not.toHaveBeenCalled();
+  it("still routes with no candidates so the build intent is seen", async () => {
+    rpc.mockImplementation(async (name: string) => name === "create_ai_task"
+      ? { data: { id: taskId }, error: null }
+      : { data: { decision: "new", starTaskId: null, confidence: 0.9, intent: "build" }, error: null });
+    expect(await routeMainChatMessage({ roomId, body: "Add a login page", stars: [] }))
+      .toEqual({ decision: "new", starTaskId: null, title: null, intent: "build" });
+    expect(rpc).toHaveBeenCalledWith("create_ai_task", expect.objectContaining({ target_kind: "star_route" }));
   });
 
   it("keeps the message unsent and selects a verified Star", async () => {
@@ -59,7 +63,7 @@ describe("pre-send Star routing", () => {
       ? { data: { id: taskId }, error: null }
       : { data: { decision: "continue", starTaskId: stars[0].id, confidence: 0.9 }, error: null });
     expect(await routeMainChatMessage({ roomId, body: "Change its colors", stars })).toEqual({
-      decision: "continue", starTaskId: stars[0].id, title: stars[0].title,
+      decision: "continue", starTaskId: stars[0].id, title: stars[0].title, intent: "answer",
     });
     expect(rpc).toHaveBeenCalledWith("create_ai_task", expect.objectContaining({
       target_kind: "star_route",
@@ -69,10 +73,15 @@ describe("pre-send Star routing", () => {
 
   it("ignores a candidate that the room does not own", async () => {
     mocks.readStarMetadata.mockResolvedValue({ stars: [], constellations: [] });
+    rpc.mockImplementation(async (name: string) => name === "create_ai_task"
+      ? { data: { id: taskId }, error: null }
+      : { data: { decision: "new", starTaskId: null, confidence: 0.9 }, error: null });
     expect(await routeMainChatMessage({ roomId, body: "Change its colors", stars })).toEqual({
-      decision: "new", starTaskId: null, title: null,
+      decision: "new", starTaskId: null, title: null, intent: "answer",
     });
-    expect(rpc).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith("create_ai_task", expect.objectContaining({
+      target_instruction: JSON.stringify({ message: "Change its colors", stars: [] }),
+    }));
   });
 
   it("falls back to new when the provider fails", async () => {
@@ -80,7 +89,7 @@ describe("pre-send Star routing", () => {
       ? { data: { id: taskId }, error: null }
       : { data: null, error: new Error("offline") });
     expect(await routeMainChatMessage({ roomId, body: "Change its colors", stars })).toEqual({
-      decision: "new", starTaskId: null, title: null,
+      decision: "new", starTaskId: null, title: null, intent: "answer",
     });
     expect(mocks.cancelAITask).toHaveBeenCalled();
   });
@@ -91,10 +100,48 @@ describe("pre-send Star routing", () => {
       mocks.readStarMetadata.mockImplementation(() => new Promise(() => {}));
       const result = routeMainChatMessage({ roomId, body: "Change its colors", stars });
       await vi.advanceTimersByTimeAsync(3_000);
-      expect(await result).toEqual({ decision: "new", starTaskId: null, title: null });
+      expect(await result).toEqual({ decision: "new", starTaskId: null, title: null, intent: "answer" });
       expect(rpc).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("cancels a route task created after the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      rpc.mockImplementation(() => new Promise((resolve) => {
+        setTimeout(() => resolve({ data: { id: taskId }, error: null }), 3_100);
+      }));
+      const result = routeMainChatMessage({ roomId, body: "Add a login page", stars: [] });
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect((await result).intent).toBe("answer");
+      await vi.advanceTimersByTimeAsync(100);
+      expect(mocks.cancelAITask).toHaveBeenCalledWith({ rpc }, taskId);
+      expect(rpc).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("route intent", () => {
+  const star = { id: "10000000-0000-4000-8000-000000000001", title: "Login" };
+
+  it("keeps the intent on every choice", () => {
+    expect(validatedRouteChoice({ decision: "new", starTaskId: null, confidence: 0.9, intent: "build" }, [star]))
+      .toEqual({ decision: "new", starTaskId: null, title: null, intent: "build" });
+    expect(validatedRouteChoice({ decision: "continue", starTaskId: star.id, confidence: 0.9, intent: "unsure" }, [star]))
+      .toEqual({ decision: "continue", starTaskId: star.id, title: "Login", intent: "unsure" });
+  });
+
+  it("falls back to a plain answer", () => {
+    expect(validatedRouteChoice(null, [star]).intent).toBe("answer");
+    expect(validatedRouteChoice({ decision: "continue", starTaskId: star.id, confidence: 0.9 }, []).intent).toBe("answer");
+  });
+
+  it("keeps a build intent even when no Star matches", () => {
+    expect(validatedRouteChoice({ decision: "continue", starTaskId: star.id, confidence: 0.9, intent: "build" }, []))
+      .toEqual({ decision: "new", starTaskId: null, title: null, intent: "build" });
   });
 });
