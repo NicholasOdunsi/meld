@@ -73,7 +73,6 @@ Shared constant: the message and request shapes are defined once in `preview-edi
     "./locate-element": "./src/locate-element.ts"
   },
   "scripts": {
-    "build": "tsup",
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -1007,7 +1006,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Build config and resource wiring**
 
-`tsup.config.ts`:
+First add `"build": "tsup"` to the `scripts` of `packages/preview-edit/package.json` (it was left out of Task 1 so `pnpm build` never ran a build with no config). Then `tsup.config.ts`:
 
 ```ts
 import { defineConfig } from "tsup";
