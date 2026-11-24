@@ -20,6 +20,7 @@ export type TweakPanelProps = {
   // Identifies the picked element. Typed text and errors reset when it changes; a refresh of the
   // same element keeps the same key, so the boxes (and focus) survive it.
   selectionKey?: string;
+  codeOwnedMessage?: string;
 };
 
 const CODE_OWNED = "Set by the screen's code. Change it in Code.";
@@ -159,7 +160,7 @@ export function TweakPanel(props: TweakPanelProps) {
     </FieldRow>
   );
   const note = (...fields: Field[]) =>
-    fields.some((field) => !view[field].hidden && !view[field].editable) ? <p className="orion-i-note">{CODE_OWNED}</p> : null;
+    fields.some((field) => !view[field].hidden && !view[field].editable) ? <p className="orion-i-note">{props.codeOwnedMessage ?? CODE_OWNED}</p> : null;
 
   return (
     <VStack gap={0} className="orion-i-body orion-i-scope" aria-busy={isPending || undefined} data-pending={isPending || undefined}>

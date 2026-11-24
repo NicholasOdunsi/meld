@@ -65,6 +65,8 @@ import { loadRuntimeBundle } from "./live/runtime-bundle";
 import { createScreenCompiler } from "./live/screen-compiler";
 import { createPastedScreen } from "./paste/create-pasted-screen";
 import { PasteDialog } from "./paste/paste-dialog";
+import { PreviewEditPanel } from "./preview-edit/preview-edit-panel";
+import { createPreviewEditStore, installPreviewEditBridge } from "./preview-edit/preview-edit-store";
 
 declare global {
   interface Window {
@@ -82,6 +84,7 @@ declare global {
       focusStar: (taskId: string, title: string) => boolean;
       previewFrame: (taskId: string, title: string, focus: boolean) => {
         x: number; y: number; width: number; height: number; zoom: number; interactive: boolean;
+        canvasLeft: number; canvasTop: number; canvasRight: number; canvasBottom: number;
       } | null;
       focusScreen: (designScreenId: string) => Promise<boolean>;
       focusAll: () => boolean;
@@ -427,8 +430,14 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
           }
           const current = next.getAppState();
           const { x, y } = sceneCoordsToViewportCoords({ sceneX: frame.x, sceneY: frame.y }, current);
-          return { x, y, width: frame.width, height: frame.height, zoom: current.zoom.value,
-            interactive: current.activeTool.type === "selection" };
+          return {
+            x, y, width: frame.width, height: frame.height, zoom: current.zoom.value,
+            interactive: current.activeTool.type === "selection",
+            canvasLeft: current.offsetLeft,
+            canvasTop: current.offsetTop,
+            canvasRight: current.offsetLeft + current.width,
+            canvasBottom: current.offsetTop + current.height,
+          };
         },
         focusAll: () => {
           if (!readyToFocus()) return false;
@@ -490,6 +499,12 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
   }, [api, instruction, roomId, selectedFrameId, store]);
 
   const nativeFrame = typeof navigator !== "undefined" && isOrionFrameV2UserAgent(navigator.userAgent);
+  const [previewEditStore] = useState(createPreviewEditStore);
+  const previewSelection = useSyncExternalStore(previewEditStore.subscribe, previewEditStore.get, () => null);
+  const previewEditEnabled = nativeFrame && access === "edit";
+  useEffect(() => {
+    if (previewEditEnabled) return installPreviewEditBridge(window, previewEditStore);
+  }, [previewEditEnabled, previewEditStore]);
 
   // The pill under the awake screen shows whether or not its frame is selected, so its bounds come from the scene.
   const liveFrameElement = liveFrameId ? api?.getSceneElements().find((element) => element.id === liveFrameId) : undefined;
@@ -636,7 +651,13 @@ export function ExcalidrawBoard({ boardId, access, roomId, initialBoard, initial
             ) : null}
           </VStack>
         )}
-        end={api && access === "edit" && selection && selection.kind !== "screen" && shapeInfo ? (
+        end={previewEditEnabled && previewSelection ? (
+          <PreviewEditPanel
+            key={previewSelection.selectionId}
+            selection={previewSelection}
+            onRequest={(request) => previewEditStore.enqueue(previewSelection.selectionId, request)}
+          />
+        ) : api && access === "edit" && selection && selection.kind !== "screen" && shapeInfo ? (
           <ShapePanel
             selectionKey={selection.ids.join(",")}
             style={shapeInfo.style}
