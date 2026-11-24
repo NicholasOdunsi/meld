@@ -1,4 +1,5 @@
 import { resolveAnySource } from "./resolve-source";
+import { captureNextJsxSource } from "./next-jsx-source";
 import { canEditText, changedSize, describeElement, isPickable, type HandleKind, type Size } from "./overlay-core";
 
 // One colour for the outline and handles inside the third-party preview page, where Orion's tokens do not exist.
@@ -8,6 +9,7 @@ const HANDLE = 8;
 // Injected by CanvasLivePreview in the closure that owns the authenticated native channel.
 declare const orionPostPreviewMessage: (message: unknown) => void;
 const post = (message: unknown) => orionPostPreviewMessage(message);
+const nextJsxSource = captureNextJsxSource(window);
 
 let enabled = false;
 let textEditable = false;
@@ -23,7 +25,7 @@ let endResize: ((commit: boolean) => void) | null = null;
 
 const OVERLAY_IDS = ["orion-selected", "orion-hover", "orion-handle-right", "orion-handle-bottom", "orion-handle-corner"];
 
-// The overlay's own nodes exist only while the feature is on, so a page where it is off is never touched.
+// The overlay's visible nodes exist only while edit mode is on.
 function box(id: string): HTMLDivElement | null {
   let element = document.getElementById(id) as HTMLDivElement | null;
   if (!element && enabled) {
@@ -133,7 +135,7 @@ async function pick(target: Element) {
   selected = target;
   outline("orion-selected", target, true);
   drawHandles();
-  const src = await resolveAnySource(target);
+  const src = nextJsxSource(target) ?? await resolveAnySource(target);
   if (revision !== pickRevision || selected !== target) return;
   post({ type: "picked", elementId, src, ...describeElement(target, window) });
 }

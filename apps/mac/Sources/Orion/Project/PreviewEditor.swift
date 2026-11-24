@@ -409,7 +409,14 @@ final class PreviewEditor {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !request.isEmpty, let pick else { return }
         var lines = ["Change this element in the app:"]
-        if let src = source { lines.append("Code: \(src.file):\(src.line)") }
+        if let src = source, let directory = root(starID) {
+            let base = directory.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+            let file = src.file.hasPrefix("/") ? URL(fileURLWithPath: src.file) : directory.appending(path: src.file)
+            let path = file.resolvingSymlinksInPath().standardizedFileURL.path
+            if path.hasPrefix(base) {
+                lines.append("Code: \(path.dropFirst(base.count)):\(src.line)")
+            }
+        }
         lines.append("Element: \(pick.html)")
         let styles = pick.computed.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")
         if !styles.isEmpty { lines.append("Styles: \(styles)") }

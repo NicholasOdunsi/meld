@@ -1,6 +1,6 @@
 # Canvas live edit — change a running app by pointing at it — design
 
-Date: 2026-11-24 · Status: awaiting owner review · Branch: `NicholasOdunsi/canvas-live-edit`
+Date: 2026-11-24 · Status: approved for implementation · Branch: `NicholasOdunsi/canvas-live-edit`
 
 ## Read this part first (plain language)
 
@@ -22,8 +22,7 @@ screen *is* the code, so Orion can rewrite it. This spec gives real apps the sam
    changes when you let go and the preview refreshes. Undo and Redo sit in the panel.
 5. **Bigger changes are described.** The same panel has a box: "Tell Orion what to change".
    Type "make this a card layout" and send. That goes to the AI agent as a normal build
-   request, with the selected element, a screenshot and its position attached, so you
-   never have to explain *which* button you mean.
+   request with the element's HTML, main styles and source location when available.
 6. If Codex or Claude has hit its usage limit, step 4 still works. Step 5 shows the
    usage-limit message already built.
 
@@ -81,9 +80,12 @@ Preview (WKWebView in the Mac app)   Canvas board (web)            Mac app
    clicked element, any failure being "not found" (never a guess):
    a. React 17/18 dev builds that carry `fiber._debugSource` (`fileName`, `lineNumber`,
       `columnNumber`): used as is.
-   b. Next.js: the first `webpack-internal:///(app-pages-browser)/./` frame of
-      `fiber._debugStack`, mapped by the dev server's `/__nextjs_original-stack-frames`.
-      Verified on Daily Quest (Next 15.5.0, React 19.1.0): `<h1>` → `app/page.tsx:415:11`.
+   b. Next.js on Webpack: capture the JSX source passed to React by Next's dev
+      transform, keyed by the creation record React copies into the DOM fiber.
+      WKWebView leaves the locations out of Webpack eval frames. Where a frame
+      contains a `webpack-internal` location, Next's dev server can also map it.
+      Verified in Orion Staging on Daily Quest (Next 15.5.0, React 19.1.0):
+      `<h1>` → `app/page.tsx:415:11`.
    c. Any other bundler that serves source maps (Vite, Parcel, Create React App,
       Rspack…): the first app frame of `fiber._debugStack` names a module URL; the module
       is fetched, its source map (inline `data:` or a `.map` file) is decoded with a

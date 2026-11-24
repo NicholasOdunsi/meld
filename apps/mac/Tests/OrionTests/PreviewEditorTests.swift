@@ -97,6 +97,23 @@ struct PreviewEditorTests {
         #expect(editor.selection?.locked == "This Star is still building.")
     }
 
+    @Test(arguments: [
+        "app/page.tsx", "/tmp/worktree/app/page.tsx", "/tmp/other/app/page.tsx",
+    ])
+    func describeUsesPathsRelativeToTheWorktree(file: String) async {
+        var body: String?
+        let editor = PreviewEditor(helper: FakeHelper(), root: { _ in URL(fileURLWithPath: "/tmp/worktree") },
+                                   lockReason: { _ in nil }, send: { text, _ in body = text; return true })
+        editor.toggle("star-1")
+        editor.receive(.picked(PreviewPick(src: .init(file: file, line: 4, column: 7),
+                                          tag: "p", text: "Hi", html: "<p>Hi</p>", computed: [:])))
+        await editor.settle()
+        await editor.handle(.describe("Make it bold"))
+        #expect(body?.contains("Element: <p>Hi</p>") == true)
+        #expect(body?.contains("Code: app/page.tsx:4") == !file.hasPrefix("/tmp/other"))
+        #expect(body?.contains("/tmp/") == false)
+    }
+
     @Test func garbledOrEmptyHelperRepliesAreFailuresNotCrashes() async {
         let helper = FakeHelper()
         let editor = editor(helper)
