@@ -87,7 +87,11 @@ export function NativeStreamBridge({
   const refreshBuilds = useCallback(async () => {
     try { setBuildState(await readRoomBuilds(roomId)); } catch { /* Chat still works while build state is unavailable. */ }
   }, [roomId]);
-  useEffect(() => { void refreshBuilds(); }, [refreshBuilds]);
+  useEffect(() => {
+    let current = true;
+    readRoomBuilds(roomId).then((state) => { if (current) setBuildState(state); }).catch(() => { /* Chat still works while build state is unavailable. */ });
+    return () => { current = false; };
+  }, [roomId]);
   const refreshStars = useCallback(async () => {
     try {
       const data = await listRoomStarMetadata(roomId);

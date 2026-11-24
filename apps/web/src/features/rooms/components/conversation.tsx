@@ -610,10 +610,11 @@ export function Conversation({
   }, [roomId]);
   useEffect(() => {
     if (realtimeMode !== "production") return;
-    void refreshBuilds();
+    let current = true;
+    readRoomBuilds(roomId).then((state) => { if (current) setBuildState(state); }).catch(() => { /* The conversation remains available. */ });
     const refresh = window.setInterval(() => { void refreshBuilds(); }, 5_000);
-    return () => window.clearInterval(refresh);
-  }, [realtimeMode, refreshBuilds]);
+    return () => { current = false; window.clearInterval(refresh); };
+  }, [realtimeMode, roomId, refreshBuilds]);
 
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();

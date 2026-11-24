@@ -12,6 +12,7 @@ function fakeSettings(existing?: unknown) {
   return {
     exists: vi.fn(async () => existing !== undefined),
     readText: vi.fn(async () => JSON.stringify(existing)),
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- typed so `mock.calls` keeps its argument types
     writePrivateText: vi.fn(async (_file: string, _contents: string) => {}),
     makeDirectory: vi.fn(async () => {}),
     removeTree: vi.fn(async () => {}),
@@ -39,6 +40,7 @@ function harness(options: { healthyAfter?: number; sessionOutput?: string; versi
     if (healthCalls <= (options.healthyAfter ?? 0)) return new Response(null, { status: 503 });
     return Response.json({ serverVersion: options.version ?? RELEASES.engine.version, orchestrationProtocolVersion: 2 });
   });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- typed so `mock.calls` keeps its argument types
   const runner = { run: vi.fn(async (_command: string, _args: string[], _options?: CommandOptions) => ({ stdout: options.sessionOutput ?? '{"token":"t3-session-abc"}', code: 0 })) };
   const engine = new EngineProcess({
     paths, fileSystem: fakeSettings(), runner, spawner, pickPort: async () => 38917, fetch: fetchMock, sleep: async () => {},

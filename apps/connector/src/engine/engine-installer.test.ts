@@ -32,6 +32,7 @@ function fakes(options: { lock?: string; versionOutput?: string; npmCode?: numbe
     openPrivateFile: vi.fn(),
   } satisfies ManagedFileSystem;
   const runner = {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- typed so `mock.calls` keeps its argument types
     run: vi.fn(async (command: string, args: string[], _options?: CommandOptions) => {
       if (command === paths.runtimeNpm) {
         files.set(path.join(args[2]!, "package-lock.json"), options.lock ?? lockFor(RELEASES.engine.version, RELEASES.engine.integrity));
