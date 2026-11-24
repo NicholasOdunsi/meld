@@ -1,5 +1,8 @@
 "use client";
 
+import { enqueueCodeLink, readRoomBuilds, respondToBuildApproval, sendBuildMessage } from "../build-actions";
+import { routeMessageToStar } from "../star-route-actions";
+import { BuildModeChoice, BuildModeSummary } from "./build-mode-panel";
 import {
   ChatLayout,
   ChatMessage,
@@ -599,6 +602,19 @@ export function Conversation({
   // (sessionStorage is client-only); the restored draft body is applied in a
   // mount effect below, avoiding a hydration mismatch on the composer.
   const [value, setValue] = useState("");
+  const [buildState, setBuildState] = useState<Awaited<ReturnType<typeof readRoomBuilds>> | null>(null);
+  const [pendingBuild, setPendingBuild] = useState<{ submission: RoomComposerSubmission; stage: "link" | "unsure"; starTaskId?: string } | null>(null);
+  const [buildBusy, setBuildBusy] = useState(false);
+  const refreshBuilds = useCallback(async () => {
+    try { setBuildState(await readRoomBuilds(roomId)); } catch { /* The conversation remains available. */ }
+  }, [roomId]);
+  useEffect(() => {
+    if (realtimeMode !== "production") return;
+    void refreshBuilds();
+    const refresh = window.setInterval(() => { void refreshBuilds(); }, 5_000);
+    return () => window.clearInterval(refresh);
+  }, [realtimeMode, refreshBuilds]);
+
   const [readiness, setReadiness] = useState<AgentReadiness>();
   const [error, setError] = useState<string>();
   // "Map a User Flow" opens a choice card that stands in for the composer's
@@ -1515,6 +1531,72 @@ export function Conversation({
     [answerProposal, dismissProposal, recordProposalResponse],
   );
 
+  const sendBuild = async (submission: RoomComposerSubmission, starTaskId?: string) => {
+    try {
+      const result = await sendBuildMessage({
+        roomId, body: submission.body, clientId: crypto.randomUUID(), starTaskId,
+        provider: submission.providerOverride, model: submission.modelOverride,
+      });
+      if (result.status === "link_required") {
+        setPendingBuild({ submission, stage: "link", starTaskId });
+        return false;
+      }
+      setPendingBuild(null);
+      void refreshBuilds();
+      return true;
+    } catch {
+      setError("Could not start the build on your Mac.");
+      return false;
+    }
+  };
+  const submitWithBuildRoute = async (submission: RoomComposerSubmission) => {
+    if (realtimeMode !== "production" || !buildState || submission.agentKind !== "product" || !submission.body.trim()
+      || (submission.mentionedUserIds.length > 0 && !submission.mentionsProductAgent)
+      || submission.attachments.length || draftAttachmentIdsRef.current.length) return submit(submission);
+    try {
+      const stars = (buildState?.stars ?? []).filter((build) => build.branch).slice(0, 5)
+        .map((build) => ({ id: build.id, title: build.branch!.slice(0, 120) }));
+      const route = await routeMessageToStar({ roomId, body: submission.body, providerOverride: submission.providerOverride, stars });
+      if (route.intent === "answer") return submit(submission);
+      const starTaskId = route.decision === "continue" ? route.starTaskId : undefined;
+      if (route.intent === "unsure") {
+        setPendingBuild({ submission, stage: "unsure", starTaskId });
+        return false;
+      }
+      return sendBuild(submission, starTaskId);
+    } catch {
+      return submit(submission);
+    }
+  };
+  const resolveBuild = async (build: boolean) => {
+    if (!pendingBuild || buildBusy) return;
+    const candidate = pendingBuild;
+    if (value.trim() !== candidate.submission.body.trim()) {
+      setPendingBuild(null);
+      return;
+    }
+    setBuildBusy(true);
+    try {
+      const sent = build ? await sendBuild(candidate.submission, candidate.starTaskId) : await submit(candidate.submission);
+      if (sent) {
+        setValue((draft) => draft.trim() === candidate.submission.body.trim() ? "" : draft);
+        setPendingBuild(null);
+      }
+    } finally {
+      setBuildBusy(false);
+    }
+  };
+  const linkBuild = async (repository: string, create: boolean) => {
+    if (buildBusy) return;
+    setBuildBusy(true);
+    try {
+      await enqueueCodeLink({ roomId, target: { kind: create ? "new_github" : "github", repository } });
+      setError(undefined);
+      void refreshBuilds();
+    } catch { setError("Could not link that repository on your Mac."); }
+    finally { setBuildBusy(false); }
+  };
+
   // A PRD proposal waits on the room's task projection: until the first read
   // lands, and while a PRD task is running, offering it would race the work
   // already under way.
@@ -1543,7 +1625,7 @@ export function Conversation({
       key={restoredDraft ? `restored:${roomId}` : `empty:${roomId}`}
       value={value}
       onChange={setValue}
-      onSubmit={submit}
+      onSubmit={submitWithBuildRoute}
       onStageAttachment={handleStageAttachment}
       onDiscardStagedAttachment={handleDiscardStagedAttachment}
       mentions={mentionOptions}
@@ -1564,7 +1646,22 @@ export function Conversation({
         data-background="pixel-grid-full"
         data-testid="conversation-layout"
         density="spacious"
-        composer={composer}
+        composer={
+          <VStack gap={1}>
+              {buildState?.stars.slice(0, 3).map((build) => (
+                <BuildModeSummary key={build.id} build={build} sendApproval={async (requestId, decision) => {
+                  await respondToBuildApproval({ roomId, starTaskId: build.id, requestId, decision });
+                  void refreshBuilds();
+                }} />
+              ))}
+              {pendingBuild ? <BuildModeChoice
+                stage={pendingBuild.stage} linked={Boolean(buildState?.link)} busy={buildBusy}
+                onBuild={() => void resolveBuild(true)} onAnswer={() => void resolveBuild(false)}
+                onLink={(repository, create) => void linkBuild(repository, create)}
+              /> : null}
+              {composer}
+          </VStack>
+        }
         style={{ height: "100%" }}
         emptyState={
         // ChatLayout centers its emptyState slot both ways by default;

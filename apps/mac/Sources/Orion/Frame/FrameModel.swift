@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OrionAppCore
@@ -298,14 +299,67 @@ final class FrameModel {
     }
 
     func sendStream(_ body: String, provider: String?, model: String?, attachmentIDs: [String] = [],
-                    starTaskID: String? = nil) async -> Bool {
+                    starTaskID: String? = nil, build: Bool = false) async -> Bool {
         guard let stream = visibleStream else { return false }
         let result = await call(
-            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds, starTaskId, starTitle}) : null;",
+            "const f = window.__orionStream; return f ? await f.post({roomId, body, providerOverride, modelOverride, attachmentIds, starTaskId, starTitle, build}) : null;",
             arguments: ["roomId": stream.roomID, "body": body,
                         "providerOverride": provider ?? NSNull(), "modelOverride": model ?? NSNull(),
-                        "attachmentIds": attachmentIDs, "starTaskId": starTaskID ?? NSNull(),
+                        "attachmentIds": attachmentIDs, "starTaskId": starTaskID ?? NSNull(), "build": build,
                         "starTitle": stream.stars.first(where: { $0.id == starTaskID })?.title ?? NSNull()]
+        )
+        return result.succeeded
+    }
+
+    func linkBuildFolder(provider: String?) async -> Bool {
+        guard let roomID = visibleStream?.roomID else { return false }
+        let picker = NSOpenPanel()
+        picker.canChooseFiles = false
+        picker.canChooseDirectories = true
+        picker.allowsMultipleSelection = false
+        guard await picker.begin() == .OK, let folder = picker.url,
+              visibleStream?.roomID == roomID else { return false }
+        do {
+            let meld = URL.applicationSupportDirectory.appending(path: "Meld", directoryHint: .isDirectory)
+            let config = try Data(contentsOf: meld.appending(path: "config.json"))
+            struct DeviceConfig: Decodable { let deviceId: UUID }
+            let deviceID = try JSONDecoder().decode(DeviceConfig.self, from: config).deviceId.uuidString.lowercased()
+            let selection = UUID().uuidString.lowercased()
+            let directory = meld.appending(path: "engine/selections", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            let record = directory.appending(path: "\(selection).json")
+            try JSONEncoder().encode(["root": folder.path]).write(to: record, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: record.path)
+            let result = await linkBuildCode(roomID: roomID, provider: provider, deviceID: deviceID,
+                                             target: ["kind": "folder", "localSelectionId": selection])
+            if !result { try? FileManager.default.removeItem(at: record) }
+            return result
+        } catch {
+            errorMessage = "Connect this Mac before linking a local folder."
+            return false
+        }
+    }
+
+    func linkGitHubBuildCode(_ repository: String, create: Bool, provider: String?) async -> Bool {
+        guard let roomID = visibleStream?.roomID else { return false }
+        return await linkBuildCode(roomID: roomID, provider: provider, deviceID: nil,
+                                   target: ["kind": create ? "new_github" : "github", "repository": repository])
+    }
+
+    private func linkBuildCode(roomID: String, provider: String?, deviceID: String?, target: [String: String]) async -> Bool {
+        let result = await call(
+            "const f = window.__orionStream; return f?.linkBuildCode ? await f.linkBuildCode({roomId, provider, deviceId: deviceId ?? undefined, target}) : null;",
+            arguments: ["roomId": roomID, "provider": provider ?? NSNull(), "deviceId": deviceID ?? NSNull(), "target": target]
+        )
+        return result.succeeded
+    }
+
+    func answerBuildApproval(starID: String, requestID: String, approve: Bool) async -> Bool {
+        guard let stream = visibleStream else { return false }
+        let result = await call(
+            "const f = window.__orionStream; return f?.answerBuildApproval ? await f.answerBuildApproval({roomId, starTaskId, requestId, decision}) : null;",
+            arguments: ["roomId": stream.roomID, "starTaskId": starID, "requestId": requestID, "decision": approve ? "accept" : "decline"]
         )
         return result.succeeded
     }

@@ -9,6 +9,7 @@ import type {
   StreamArtifact,
   StreamMessageRow,
   StreamStar,
+  StreamBuild,
   StreamModelChoice,
   StreamSend,
   StreamScreen,
@@ -30,6 +31,8 @@ export type StreamSnapshotInput = {
   constellations?: RoomConstellation[];
   artifacts?: StreamArtifact[];
   screenRows?: ScreenFeedRow[];
+  buildCodeName?: string | null;
+  builds?: StreamBuild[];
 };
 
 const NOT_READY_TEXT = {
@@ -81,20 +84,24 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
   const metadataByTask = new Map(input.starMetadata?.map((item) => [item.taskId, item]) ?? []);
   // A follow-up stays attached to its Star: its own reply task is not a new Star.
   const followupMessageIds = new Set(input.starMetadata?.flatMap((item) => item.followupMessageIds) ?? []);
+  const builds = new Map(input.builds?.map((build) => [build.id, build]));
   const stars: StreamStar[] = input.taskStatuses.flatMap((task) => {
-    if (task.kind !== "room_reply" || !task.sourceMessageId) return [];
+    const build = builds.get(task.taskId);
+    if ((task.kind !== "room_reply" && !build) || !task.sourceMessageId) return [];
     if (followupMessageIds.has(task.sourceMessageId)) return [];
     const source = sourceMessages.get(task.sourceMessageId);
     const title = source?.body.trim().replace(/\s+/g, " ").slice(0, 80)
       || source?.attachments[0]?.originalName || "Earlier request";
-    const status = task.status === "completed" || task.status === "cancelled"
+    const status = build
+      ? build.status === "failed" ? "stuck" : build.status === "cancelled" ? "done" : build.status
+      : task.status === "completed" || task.status === "cancelled"
       ? "done" as const
       : task.status === "failed" ? "stuck" as const
       : isTerminalTaskStatus(task.status) ? "needs_you" as const : "working" as const;
     const metadata = metadataByTask.get(task.taskId);
     return [{ id: task.taskId, sourceMessageId: task.sourceMessageId, title: metadata?.title ?? title, status,
       constellation: metadata?.constellation ?? null, createdAt: task.createdAt,
-      followupMessageIds: metadata?.followupMessageIds ?? [] }];
+      followupMessageIds: metadata?.followupMessageIds ?? [], ...(build ? { build } : {}) }];
   });
 
   let send: StreamSend;
@@ -145,6 +152,7 @@ export function buildStreamSnapshot(input: StreamSnapshotInput): StreamSnapshot 
     choices,
     messages,
     stars,
+    ...(input.buildCodeName ? { buildCodeName: input.buildCodeName } : {}),
     artifacts: linkArtifactsToStars(input.artifacts ?? [], stars, messages),
     screens,
     activity,

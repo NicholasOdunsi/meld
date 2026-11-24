@@ -1,4 +1,4 @@
-import type { RouteIntent } from "@meld/contracts";
+import type { ApprovalRequest, BuildStatus, ChangedFile, RouteIntent } from "@meld/contracts";
 
 export type NativeMessage =
   | { v: 1; type: "ready"; workspaceId: string | null }
@@ -53,6 +53,17 @@ export type StreamMessageRow = {
   taskId: string | null;
 };
 
+export type StreamBuild = {
+  id: string;
+  status: BuildStatus;
+  step: string | null;
+  branch: string | null;
+  reply: string | null;
+  changedFiles: ChangedFile[];
+  approval: ApprovalRequest | null;
+  offline: boolean;
+};
+
 export type StreamStar = {
   id: string;
   sourceMessageId: string;
@@ -61,6 +72,7 @@ export type StreamStar = {
   constellation: string | null;
   createdAt: string;
   followupMessageIds: string[];
+  build?: StreamBuild;
 };
 
 export type StreamArtifact = {
@@ -115,6 +127,7 @@ export type StreamSnapshot = {
   choices: StreamModelChoice[];
   messages: StreamMessageRow[];
   stars: StreamStar[];
+  buildCodeName?: string | null;
   artifacts: StreamArtifact[];
   screens: StreamScreen[];
   activity: StreamActivity[];
@@ -129,6 +142,11 @@ export type StreamHandlers = {
     roomId: string; body: string; providerOverride?: string;
     stars: { id: string; title: string }[];
   }) => Promise<FrameResult>;
+  linkBuildCode?: (input: {
+    roomId: string; deviceId?: string; provider?: string;
+    target: { kind: "folder"; localSelectionId: string } | { kind: "github" | "new_github"; repository: string };
+  }) => Promise<FrameResult>;
+  answerBuildApproval?: (input: { roomId: string; starTaskId: string; requestId: string; decision: "accept" | "decline" }) => Promise<FrameResult>;
   retryDesignProposal: (input: { roomId: string; messageId: string }) => Promise<FrameResult>;
   post: (input: {
     roomId: string;
@@ -138,6 +156,7 @@ export type StreamHandlers = {
     attachmentIds?: string[];
     starTaskId?: string;
     starTitle?: string;
+    build?: boolean;
   }) => Promise<FrameResult>;
   stage: (input: { roomId: string; name: string; mimeType: string; base64: string }) => Promise<FrameResult>;
   discard: (input: { roomId: string; attachmentId: string }) => Promise<FrameResult>;

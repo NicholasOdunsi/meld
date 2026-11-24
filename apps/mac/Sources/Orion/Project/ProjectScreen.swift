@@ -474,6 +474,9 @@ struct ProjectScreen: View {
                                      }, openStar: { frame.openStar($0) }, avatarGap: OrionSpacing.xs)
                         .id(message.id)
                 }
+                if let build = star.build {
+                    StreamBuildSummary(frame: frame, starID: star.id, build: build)
+                }
                 if let activity = stream.activity(forStar: star.id) {
                     ActivityLine(activity: activity) { Task { await frame.retryDesignProposal(activity.taskID) } }.id("activity")
                 }

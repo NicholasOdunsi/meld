@@ -17,6 +17,41 @@ public struct StreamMessage: Identifiable, Equatable, Sendable {
     public let taskID: String?
 }
 
+public struct StreamBuild: Equatable, Sendable {
+    public struct File: Identifiable, Equatable, Sendable {
+        public var id: String { path }
+        public let path: String
+        public let added: Int
+        public let removed: Int
+    }
+
+    public struct Approval: Equatable, Sendable {
+        public let id: String
+        public let summary: String
+    }
+
+    public let step: String?
+    public let branch: String?
+    public let reply: String?
+    public let files: [File]
+    public let approval: Approval?
+    public let offline: Bool
+
+    static func decode(_ row: [String: Any]) -> Self {
+        let files = (row["changedFiles"] as? [[String: Any]] ?? []).compactMap { file -> File? in
+            guard let path = file["path"] as? String, let added = file["added"] as? Int,
+                  let removed = file["removed"] as? Int else { return nil }
+            return File(path: path, added: added, removed: removed)
+        }
+        let approval = (row["approval"] as? [String: Any]).flatMap { item -> Approval? in
+            guard let id = item["id"] as? String, let summary = item["summary"] as? String else { return nil }
+            return Approval(id: id, summary: summary)
+        }
+        return Self(step: row["step"] as? String, branch: row["branch"] as? String, reply: row["reply"] as? String,
+                    files: files, approval: approval, offline: row["offline"] as? Bool ?? false)
+    }
+}
+
 public struct StreamStar: Identifiable, Equatable, Sendable {
     public enum Status: String, Sendable { case working, needs_you, stuck, done }
     public let id: String
@@ -26,6 +61,19 @@ public struct StreamStar: Identifiable, Equatable, Sendable {
     public let constellation: String?
     public let createdAt: Date
     public let followupMessageIDs: [String]
+    public let build: StreamBuild?
+
+    init(id: String, sourceMessageID: String, title: String, status: Status, constellation: String?,
+         createdAt: Date, followupMessageIDs: [String], build: StreamBuild? = nil) {
+        self.id = id
+        self.sourceMessageID = sourceMessageID
+        self.title = title
+        self.status = status
+        self.constellation = constellation
+        self.createdAt = createdAt
+        self.followupMessageIDs = followupMessageIDs
+        self.build = build
+    }
 }
 
 public struct StreamModelChoice: Identifiable, Equatable, Sendable {
@@ -67,6 +115,7 @@ public struct StreamSnapshot: Equatable, Sendable {
     public let choices: [StreamModelChoice]
     public let messages: [StreamMessage]
     public let stars: [StreamStar]
+    public let buildCodeName: String?
     public let artifacts: [StreamArtifact]
     public let screens: [StreamScreen]
     public let activity: [StreamActivity]
@@ -108,7 +157,8 @@ public struct StreamSnapshot: Equatable, Sendable {
                   let date = fractional.date(from: dateText) ?? plain.date(from: dateText) else { return nil }
             return StreamStar(id: id, sourceMessageID: source, title: title, status: status,
                               constellation: row["constellation"] as? String, createdAt: date,
-                              followupMessageIDs: row["followupMessageIds"] as? [String] ?? [])
+                              followupMessageIDs: row["followupMessageIds"] as? [String] ?? [],
+                              build: (row["build"] as? [String: Any]).map(StreamBuild.decode))
         }.sorted { $0.createdAt > $1.createdAt }
         let choices = (fields["choices"] as? [[String: Any]] ?? []).compactMap { row -> StreamModelChoice? in
             guard let provider = row["provider"] as? String, !provider.isEmpty else { return nil }
@@ -146,7 +196,8 @@ public struct StreamSnapshot: Equatable, Sendable {
                     orionBusy: fields["orionBusy"] as? Bool ?? false,
                     canSend: send["canSend"] as? Bool ?? false, blockedReason: send["reason"] as? String,
                     defaultProvider: fields["defaultProvider"] as? String,
-                    choices: choices, messages: Array(messages.suffix(1_000)), stars: stars, artifacts: artifacts,
+                    choices: choices, messages: Array(messages.suffix(1_000)), stars: stars,
+                    buildCodeName: fields["buildCodeName"] as? String, artifacts: artifacts,
                     screens: screens, activity: activity,
                     constellations: fields["constellations"] as? [String] ?? [])
     }
