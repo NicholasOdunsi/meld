@@ -102,6 +102,26 @@ function repositoryError(message: string): GatewayRepositoryError {
   );
 }
 
+describe("build task dispatch", () => {
+  it("forwards only the authorized build context and accepts a build event", async () => {
+    const h = createHarness();
+    const context = { kind: "build_turn", projectId: WORKSPACE_ID, engineProjectId: WORKSPACE_ID,
+      starTaskId: TASK_ID, sourceMessageId: REQUEST_ID, text: "Create a login page" };
+    vi.mocked(h.repository.claimTask).mockResolvedValue({
+      taskId: TASK_ID, attemptId: ATTEMPT_ID, provider: "claude", kind: "build_turn",
+      instruction: "Build mode task", agentKind: "product", researchScope: "room",
+    });
+    vi.mocked(h.repository.hydrateAuthorizedRoomContext).mockResolvedValue({ status: "ready", context: { ...context, kind: "build_turn" } });
+    await h.handler.handle(h.session, textFrame({ type: "task.claim", taskId: TASK_ID }));
+    expect(h.messages()).toContainEqual(expect.objectContaining({ type: "task.payload", taskId: TASK_ID, context }));
+    await h.handler.handle(h.session, textFrame({
+      type: "task.event", taskId: TASK_ID, attemptId: ATTEMPT_ID, sequence: 1,
+      event: { type: "build", event: { type: "step", label: "Editing files" } },
+    }));
+    expect(h.repository.appendTaskEvent).toHaveBeenCalledOnce();
+  });
+});
+
 describe("createProtocolHandler validation", () => {
   it.each([
     ["invalid JSON", Buffer.from("{") as RawData],

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { BUILD_STEP_MIN_INTERVAL_MS, type BuildEvent, type BuildStatus } from "@meld/contracts";
+import { BUILD_STEP_MIN_INTERVAL_MS, MAX_BUILD_CHANGED_FILES, ChangedFileSchema, type BuildEvent, type BuildStatus, type ChangedFile } from "@meld/contracts";
 import { z } from "zod";
 import { redactDiagnostic } from "../providers/provider-installer";
 
@@ -24,6 +24,14 @@ const MessageSchema = z.object({
   streaming: z.boolean(),
 });
 const ThreadSchema = z.object({ branch: z.string().nullable() });
+const CheckpointSchema = z.object({
+  runId: z.string().nullable(),
+  files: z.array(z.object({
+    path: z.string(),
+    additions: z.number().int().nonnegative(),
+    deletions: z.number().int().nonnegative(),
+  })),
+});
 const SnapshotSchema = z.object({
   kind: z.literal("snapshot"),
   snapshotSequence: z.number().int().nonnegative(),
@@ -33,6 +41,7 @@ const SnapshotSchema = z.object({
     runtimeRequests: z.array(RuntimeRequestSchema),
     turnItems: z.array(z.unknown()),
     messages: z.array(z.unknown()),
+    checkpoints: z.array(z.unknown()).default([]),
   }),
 });
 const EventSchema = z.object({
@@ -65,6 +74,7 @@ export function approvalId(engineRequestId: string): string {
 export class BuildProjection {
   sequence = -1;
   terminal: { status: "done" | "failed" | "cancelled"; ordinal: number } | undefined;
+  changedFiles: ChangedFile[] = [];
   private readonly requests = new Map<string, RuntimeRequest>();
   private readonly approvalItems = new Map<string, TurnItem>();
   private readonly replies = new Map<string, string>();
@@ -72,7 +82,11 @@ export class BuildProjection {
   private branch: string | undefined;
   private lastStepAt = -Infinity;
 
-  constructor(private readonly runId: string, private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly runId: string,
+    private readonly now: () => number = Date.now,
+    private readonly localPaths: readonly string[] = [],
+  ) {}
 
   get reply(): string {
     return [...this.replies.values()].join("\n\n").slice(0, 100_000);
@@ -94,6 +108,7 @@ export class BuildProjection {
         if (item.success) this.rememberApprovalItem(item.data);
       }
       for (const message of projection.messages) this.readMessage(message);
+      for (const checkpoint of projection.checkpoints) this.readCheckpoint(checkpoint);
       const run = projection.runs.find(({ id }) => id === this.runId);
       if (run) this.readRun(run);
       return [...events, ...this.publishApproval()];
@@ -116,6 +131,9 @@ export class BuildProjection {
       }
       case "message.updated":
         this.readMessage(payload);
+        return [];
+      case "checkpoint.captured":
+        this.readCheckpoint(payload);
         return [];
       case "runtime-request.updated": {
         const request = RuntimeRequestSchema.safeParse(payload);
@@ -148,8 +166,17 @@ export class BuildProjection {
     const message = MessageSchema.safeParse(value);
     if (message.success && message.data.runId === this.runId
       && message.data.role === "assistant" && !message.data.streaming) {
-      this.replies.set(message.data.id, redactDiagnostic(message.data.text.trim()));
+      this.replies.set(message.data.id, this.redactLocalDetails(message.data.text.trim()));
     }
+  }
+
+  private readCheckpoint(value: unknown): void {
+    const checkpoint = CheckpointSchema.safeParse(value);
+    if (!checkpoint.success || checkpoint.data.runId !== this.runId) return;
+    this.changedFiles = checkpoint.data.files.slice(0, MAX_BUILD_CHANGED_FILES).flatMap((file) => {
+      const parsed = ChangedFileSchema.safeParse({ path: file.path, added: file.additions, removed: file.deletions });
+      return parsed.success && !file.path.startsWith("/") && !file.path.split("/").includes("..") ? [parsed.data] : [];
+    });
   }
 
   private rememberApprovalItem(item: TurnItem): void {
@@ -164,17 +191,23 @@ export class BuildProjection {
     if (id === this.lastApproval) return [];
     this.lastApproval = id;
     if (!id || !next) return [{ type: "status", status: "working" }];
-    // The command itself can contain credentials or local paths. The raw
-    // request stays on the Mac in the engine's own thread projection.
     const kind = this.requests.get(next[0])?.kind;
+    const prompt = next[1].prompt && this.redactLocalDetails(next[1].prompt).trim().slice(0, 500);
     return [{
       type: "approval_request",
       request: {
         id,
-        summary: kind === "command" ? "Run a command in the build worktree" : "Allow the build to make changes",
+        summary: prompt || (kind === "command" ? "Run a command in the build worktree" : "Allow the build to make changes"),
         choices: [{ id: "accept", label: "Approve" }, { id: "decline", label: "Decline" }],
       },
     }, { type: "status", status: "needs_you" }];
+  }
+
+  private redactLocalDetails(text: string): string {
+    for (const localPath of this.localPaths) {
+      text = text.replaceAll(localPath, "[local path]").replaceAll(encodeURI(localPath), "[local path]");
+    }
+    return redactDiagnostic(text.replace(/(^|[\s='"(])\/[\w./@~+-]+/g, "$1[local path]"));
   }
 
   private readStep(item: TurnItem): BuildEvent[] {

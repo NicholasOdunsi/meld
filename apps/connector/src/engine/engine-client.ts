@@ -270,7 +270,7 @@ export class EngineClient {
       runtimeMode: "approval-required",
       interactionMode: "default",
       workspaceStrategy: { type: "worktree", baseRef, branch },
-      initialMessage: { text: prompt, attachments: [] },
+      initialMessage: { messageId: input.commandId, text: prompt, attachments: [] },
     });
   }
 

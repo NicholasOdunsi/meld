@@ -4,6 +4,7 @@ import type { Provider } from "@meld/contracts";
 const SAFE_VERSION = /^[0-9A-Za-z][0-9A-Za-z.+-]*$/;
 
 export interface ConnectorPaths {
+  userHome: string;
   root: string;
   bundleDir: string;
   agentEntry: string;
@@ -24,6 +25,7 @@ export interface ConnectorPaths {
   engineVersion(version: string): string;
   engineHome: string;
   engineExecutable: string;
+  githubConfigDir: string;
   providersRoot: string;
   providerCurrent(provider: Provider): string;
   providerVersion(provider: Provider, version: string): string;
@@ -58,6 +60,7 @@ export function connectorPaths(home: string): ConnectorPaths {
   const stateDir = path.join(root, "state");
 
   return {
+    userHome: home,
     root,
     bundleDir,
     agentEntry: path.join(bundleDir, "agent.mjs"),
@@ -86,6 +89,7 @@ export function connectorPaths(home: string): ConnectorPaths {
     engineVersion: (version) => path.join(engineRoot, "versions", assertSafeVersion(version)),
     engineHome: path.join(engineRoot, "home"),
     engineExecutable: path.join(engineCurrent, "node_modules", "t3", "bin", "t3.mjs"),
+    githubConfigDir: path.join(home, ".config", "gh"),
     providersRoot,
     providerCurrent: (provider) =>
       path.join(providersRoot, provider, "current"),

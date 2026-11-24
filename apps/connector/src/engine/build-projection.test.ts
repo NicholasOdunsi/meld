@@ -17,6 +17,7 @@ describe("build projection", () => {
     const events = streamFixture("build-turn").flatMap((packet) => projection.read(packet));
     expect(projection.terminal).toEqual({ status: "done", ordinal: 1 });
     expect(projection.reply).toContain("hello from Orion");
+    expect(projection.changedFiles).toEqual([{ path: "README.md", added: 2, removed: 0 }]);
     expect(projection.sequence).toBeGreaterThan(0);
     expect(events.every((event) => BuildEventSchema.safeParse(event).success)).toBe(true);
   });
@@ -32,6 +33,7 @@ describe("build projection", () => {
     const approvals = events.filter((event) => event.type === "approval_request");
     expect(approvals).toHaveLength(1);
     expect(approvals[0]?.request.id).toBe(approvalId(original.event.payload.requestId));
+    expect(approvals[0]?.request.summary).toBe("npm install left-pad@1.2.0");
     expect(approvals[0]?.request.choices).toEqual([{ id: "accept", label: "Approve" }, { id: "decline", label: "Decline" }]);
     expect(events).toContainEqual({ type: "status", status: "needs_you" });
     expect(events).toContainEqual({ type: "status", status: "working" });
@@ -51,5 +53,19 @@ describe("build projection", () => {
     expect(projection.read(packet(3, run(1)))).toEqual([]);
     now += 2_000;
     expect(projection.read(packet(4, run(1)))).toHaveLength(1);
+  });
+
+  it("removes local paths including URL-encoded links from the cloud reply", () => {
+    const worktrees = "/Users/ada/Library/Application Support/Meld/engine";
+    const projection = new BuildProjection(run(1), Date.now, [worktrees]);
+    projection.read({
+      kind: "event", sequence: 1,
+      event: { type: "message.updated", payload: {
+        id: "reply", runId: run(1), role: "assistant", streaming: false,
+        text: `See [file](${encodeURI(worktrees)}/example.ts) or /Users/ada/other/example.ts`,
+      } },
+    });
+    expect(projection.reply).not.toContain("/Users/ada/");
+    expect(projection.reply).toContain("example.ts");
   });
 });

@@ -49,8 +49,12 @@ export interface EngineSpawner {
 export function engineEnvironment(paths: ConnectorPaths, port: number): Record<string, string> {
   return {
     ...engineLauncherEnvironment(paths),
+    // The engine stores its state under T3CODE_HOME. Git and the managed
+    // providers still need this Mac user's credential and config lookup.
+    HOME: paths.userHome,
     PATH: `${path.dirname(paths.runtimeNode)}:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin`,
     T3CODE_PORT: String(port),
+    GH_CONFIG_DIR: paths.githubConfigDir,
   };
 }
 
@@ -207,10 +211,12 @@ export class EngineProcess {
       }).catch(() => undefined);
       if (response?.ok) {
         const descriptor = await response.json().catch(() => null);
-        if (descriptor?.serverVersion !== RELEASES.engine.version || descriptor.orchestrationProtocolVersion !== 2) {
-          throw new Error("The build engine reports an unexpected version.");
+        if (descriptor !== null) {
+          if (descriptor.serverVersion !== RELEASES.engine.version || descriptor.orchestrationProtocolVersion !== 2) {
+            throw new Error("The build engine reports an unexpected version.");
+          }
+          return;
         }
-        return;
       }
       await response?.body?.cancel().catch(() => {});
       await this.deps.sleep(HEALTH_POLL_MS);

@@ -9,7 +9,7 @@ import {
   ProviderSetupStageSchema,
   ProviderStatusSchema,
 } from "./ai";
-import { BuildTaskEventSchema } from "./build";
+import { BuildTaskContextSchema, BuildTaskEventSchema, BuildTaskResultSchema } from "./build";
 
 export const MAX_ACTIVE_TASKS = 32;
 export const MAX_WS_FRAME_BYTES = 1024 * 1024;
@@ -107,7 +107,11 @@ export const AIResultEnvelopeSchema = z
   })
   .refine((value) => jsonBytes(value) <= MAX_RESULT_BYTES, {
     message: "AI result exceeds the maximum serialized size",
-  });
+  })
+  .refine(
+    (value) => !["code_link", "build_turn", "build_approval"].includes(value.kind) || BuildTaskResultSchema.safeParse(value).success,
+    { message: "Invalid build task result" },
+  );
 export type AIResultEnvelope = z.infer<typeof AIResultEnvelopeSchema>;
 
 export const ServerToDeviceMessageSchema = FrameSizeSchema.pipe(
@@ -127,7 +131,7 @@ export const ServerToDeviceMessageSchema = FrameSizeSchema.pipe(
       attemptId: z.string().uuid(),
       provider: ProviderSchema,
       model: z.string().trim().min(1).max(100).nullable().optional(),
-      context: AIContextPackageSchema,
+      context: z.union([BuildTaskContextSchema, AIContextPackageSchema]),
     }),
     z.object({
       type: z.literal("task.cancel"),

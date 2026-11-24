@@ -1,5 +1,6 @@
 import {
   AIContextPackageSchema,
+  BuildTaskContextSchema,
   DeviceToServerMessageSchema,
   ProviderSetupRejectionSchema,
   TaskOperationRejectionSchema,
@@ -195,12 +196,14 @@ export function createProtocolHandler({
         return;
       }
 
-      const context = AIContextPackageSchema.safeParse({
-        ...hydration.context,
-        agentKind: claimed.agentKind,
-        researchScope: claimed.researchScope,
-      });
-      if (!context.success) {
+      const context = claimed.kind === "code_link" || claimed.kind === "build_turn" || claimed.kind === "build_approval"
+        ? BuildTaskContextSchema.safeParse(hydration.context)
+        : AIContextPackageSchema.safeParse({
+            ...hydration.context,
+            agentKind: claimed.agentKind,
+            researchScope: claimed.researchScope,
+          });
+      if (!context.success || context.data.kind !== claimed.kind) {
         throw new Error("Invalid hydrated AI context");
       }
 

@@ -82,6 +82,7 @@ describe("background agent", () => {
       requestedProvider: "claude",
       createProviderSetup: expect.any(Function),
       createTaskExecutor: expect.any(Function),
+      buildTaskExecutor: expect.objectContaining({ execute: expect.any(Function) }),
       detectProviders: expect.any(Function),
       onTerminal: expect.any(Function),
     });

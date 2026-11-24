@@ -85,6 +85,9 @@ export interface ProviderSetupLike {
 export interface TaskResultEnvelope {
   kind:
     | "star_route"
+    | "code_link"
+    | "build_turn"
+    | "build_approval"
     | "room_reply"
     | "prd_generate"
     | "prd_revise"
@@ -120,6 +123,11 @@ export interface TaskExecutorLike {
   cleanup(taskId: string, attemptId: string): Promise<void>;
 }
 
+export interface BuildTaskExecutorLike {
+  execute(payload: TaskPayload, signal: AbortSignal, emit: TaskEmit): Promise<TaskResultEnvelope>;
+  cancel(taskId: string): Promise<void>;
+}
+
 export interface GatewayClientOptions {
   gatewayUrl: string;
   credentialStore: CredentialStore;
@@ -127,6 +135,7 @@ export interface GatewayClientOptions {
   createSocket?: GatewaySocketFactory;
   createProviderSetup(): ProviderSetupLike;
   createTaskExecutor(): TaskExecutorLike;
+  buildTaskExecutor?: BuildTaskExecutorLike;
   detectProviders(): Promise<ProviderStatus[]>;
   onFenced?(lease: ActiveTaskLease): void;
   onTerminal?(reason: string): void;
@@ -140,6 +149,7 @@ type ActiveTaskRun = {
   nextSequence: number;
   terminalSent: boolean;
   cleanup(): Promise<void>;
+  cancel?(): Promise<void>;
 };
 
 /** One in-flight provider-setup request. */
@@ -231,6 +241,7 @@ export class GatewayClient {
   private readonly createSocket: GatewaySocketFactory;
   private readonly setup: ProviderSetupLike;
   private readonly executor: TaskExecutorLike;
+  private readonly buildExecutor?: BuildTaskExecutorLike;
   private readonly detectProviders: () => Promise<ProviderStatus[]>;
   private readonly onFenced: (lease: ActiveTaskLease) => void;
   private readonly onTerminal: (reason: string) => void;
@@ -253,6 +264,7 @@ export class GatewayClient {
     createSocket = defaultSocketFactory,
     createProviderSetup,
     createTaskExecutor,
+    buildTaskExecutor,
     detectProviders,
     onFenced = () => undefined,
     onTerminal = () => undefined,
@@ -262,6 +274,7 @@ export class GatewayClient {
     this.createSocket = createSocket;
     this.setup = createProviderSetup();
     this.executor = createTaskExecutor();
+    this.buildExecutor = buildTaskExecutor;
     this.detectProviders = detectProviders;
     this.onFenced = onFenced;
     this.onTerminal = onTerminal;
@@ -556,6 +569,7 @@ export class GatewayClient {
 
       case "task.cancel": {
         const key = runKey(message);
+        void this.runs.get(key)?.cancel?.().catch(() => {});
         this.disposeRun(key);
         this.send({
           type: "task.cancelled",
@@ -639,13 +653,16 @@ export class GatewayClient {
     }
 
     const abortController = new AbortController();
+    const isBuild = message.context.kind === "code_link" || message.context.kind === "build_turn" || message.context.kind === "build_approval";
+    const build = isBuild ? this.buildExecutor : undefined;
     const run: ActiveTaskRun = {
       taskId: message.taskId,
       attemptId: message.attemptId,
       abortController,
       nextSequence: 1,
       terminalSent: false,
-      cleanup: () => this.executor.cleanup(message.taskId, message.attemptId),
+      cleanup: isBuild ? async () => {} : () => this.executor.cleanup(message.taskId, message.attemptId),
+      cancel: build ? () => build.cancel(message.taskId) : undefined,
     };
     this.runs.set(key, run);
 
@@ -667,8 +684,10 @@ export class GatewayClient {
       context: message.context,
     };
 
-    void this.executor
-      .execute(payload, abortController.signal, emit)
+    const execution = isBuild
+      ? build?.execute(payload, abortController.signal, emit) ?? Promise.reject(new Error("Build mode is unavailable on this connector."))
+      : this.executor.execute(payload, abortController.signal, emit);
+    void execution
       .then((envelope) => {
         if (this.runs.get(key) !== run || run.terminalSent) {
           return;
@@ -690,7 +709,9 @@ export class GatewayClient {
           return;
         }
         run.terminalSent = true;
-        const { code, message: failMessage } = taskFailure(error);
+        const { code, message: failMessage } = isBuild
+          ? { code: "unknown" as const, message: "Your Mac could not complete this Build mode task." }
+          : taskFailure(error);
         this.trySend({
           type: "task.fail",
           ...lease,

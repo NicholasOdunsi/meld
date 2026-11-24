@@ -67,3 +67,37 @@ export const BuildInstructionSchema = z.discriminatedUnion("kind", [
 export type BuildInstruction = z.infer<typeof BuildInstructionSchema>;
 
 export const BuildTaskEventSchema = z.strictObject({ type: z.literal("build"), event: BuildEventSchema });
+
+export const BuildTaskContextSchema = z.discriminatedUnion("kind", [
+  BuildInstructionSchema.options[0],
+  BuildInstructionSchema.options[1].extend({
+    projectId: z.uuid(),
+    engineProjectId: z.string().min(1).max(200),
+    text: z.string().trim().min(1).max(20_000),
+  }),
+  BuildInstructionSchema.options[2].extend({ projectId: z.uuid() }),
+]);
+export type BuildTaskContext = z.infer<typeof BuildTaskContextSchema>;
+
+export const BuildTaskResultSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("code_link"),
+    payload: z.strictObject({
+      engineProjectId: z.uuid(),
+      displayName: z.string().trim().min(1).max(200),
+      repoUrl: z.string().regex(/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/).nullable(),
+    }),
+    partial: z.literal(false),
+  }),
+  z.strictObject({
+    kind: z.literal("build_turn"),
+    payload: z.strictObject({ status: z.enum(["done", "failed", "cancelled"]) }),
+    partial: z.literal(false),
+  }),
+  z.strictObject({
+    kind: z.literal("build_approval"),
+    payload: z.strictObject({ requestId: ApprovalRequestSchema.shape.id }),
+    partial: z.literal(false),
+  }),
+]);
+export type BuildTaskResult = z.infer<typeof BuildTaskResultSchema>;

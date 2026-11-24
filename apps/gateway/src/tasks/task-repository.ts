@@ -4,6 +4,7 @@ import type {
   AIResultEnvelope,
   AITaskKind,
   AITaskStatus,
+  BuildTaskContext,
   ActiveTaskLease,
   Provider,
   ResearchScope,
@@ -39,7 +40,7 @@ export interface ClaimedTask {
 export type HydrationOutcome =
   | {
       status: "ready";
-      context: AIContextPackage;
+      context: AIContextPackage | BuildTaskContext;
     }
   | {
       status: "rejected";
