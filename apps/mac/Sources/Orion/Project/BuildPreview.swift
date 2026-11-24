@@ -47,17 +47,35 @@ final class BuildPreview {
         return directory
     }
 
+    private func launchPlan(for starID: String, port: UInt16) -> Result<PreviewLaunchPlan, PreviewLaunchError> {
+        guard let folder = worktree(for: starID),
+              let manifest = try? Data(contentsOf: folder.appending(path: "package.json")) else { return .failure(.notAWebProject) }
+        let files = PreviewLaunchFiles(
+            read: { try? Data(contentsOf: folder.appending(path: $0)) },
+            exists: { FileManager.default.fileExists(atPath: folder.appending(path: $0).path) })
+        do { return .success(try PreviewLauncher.plan(packageJSON: manifest, port: port, files: files)) }
+        catch { return .failure(error) }
+    }
+
     func canPreview(_ starID: String) -> Bool {
-        guard let folder = worktree(for: starID) else { return false }
-        return FileManager.default.isReadableFile(atPath: folder.appending(path: "node_modules/next/dist/bin/next").path)
+        if case .success = launchPlan(for: starID, port: 3000) { return true }
+        return false
+    }
+
+    private func message(for error: PreviewLaunchError) -> String {
+        switch error {
+        case .dependenciesMissing: String(localized: "Install this project's dependencies in the build worktree first.")
+        case .noDevScript: String(localized: "This project has no dev or start script to preview.")
+        case .notAWebProject: String(localized: "This project can't be previewed.")
+        }
     }
 
     func start(_ id: String) async -> URL? {
         guard !starting else { return nil }
         if let url = runningURL(for: id) { return url }
         failure = nil
-        guard let folder = worktree(for: id), canPreview(id) else {
-            failure = (id, "Install Next.js dependencies in the build worktree first.")
+        guard let folder = worktree(for: id) else {
+            failure = (id, message(for: .notAWebProject))
             return nil
         }
         guard let port = availableLoopbackPort(),
@@ -66,11 +84,28 @@ final class BuildPreview {
             return nil
         }
 
+        let plan: PreviewLaunchPlan
+        switch launchPlan(for: id, port: port) {
+        case .success(let value): plan = value
+        case .failure(let error): failure = (id, message(for: error)); return nil
+        }
+
         startingStarID = id
         defer { startingStarID = nil }
+        let runtime = nodeURL.deletingLastPathComponent()
         let child = Process()
-        child.executableURL = nodeURL
-        child.arguments = ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", String(port)]
+        switch plan.kind {
+        case .node(let entry):
+            child.executableURL = nodeURL
+            child.arguments = [entry] + plan.arguments
+        case .npmScript(let name):
+            child.executableURL = runtime.appending(path: "npm")
+            child.arguments = ["run", name]
+        }
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = runtime.path + ":" + (environment["PATH"] ?? "/usr/bin:/bin")
+        for (key, value) in plan.environment { environment[key] = value }
+        child.environment = environment
         child.currentDirectoryURL = folder
         child.standardInput = FileHandle.nullDevice
         child.standardOutput = FileHandle.nullDevice
@@ -91,15 +126,48 @@ final class BuildPreview {
         } catch {
             // A startup failure is reported against this Star.
         }
-        if child.isRunning { child.terminate() }
+        terminateTree(child)
         servers.removeValue(forKey: id)
         failure = (id, "The preview server could not start.")
         return nil
     }
 
     func stop() {
-        for server in servers.values where server.process.isRunning { server.process.terminate() }
+        for server in servers.values { terminateTree(server.process) }
         servers.removeAll()
+    }
+
+    /// An `npm run` child starts its own children (npm, then sh, then the dev server), so ending only the
+    /// parent would leave the dev server running. Ends every descendant, deepest first, then the parent.
+    private func terminateTree(_ process: Process) {
+        guard process.isRunning else { return }
+        for pid in Self.descendants(of: process.processIdentifier).reversed() { kill(pid, SIGTERM) }
+        process.terminate()
+    }
+
+    private static func descendants(of root: pid_t) -> [pid_t] {
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = ["-axo", "pid=,ppid="]
+        let pipe = Pipe()
+        ps.standardOutput = pipe
+        ps.standardError = FileHandle.nullDevice
+        guard (try? ps.run()) != nil else { return [] }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        ps.waitUntilExit()
+        var children: [pid_t: [pid_t]] = [:]
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let fields = line.split(separator: " ").compactMap { pid_t($0) }
+            if fields.count == 2 { children[fields[1], default: []].append(fields[0]) }
+        }
+        var found: [pid_t] = []
+        var queue = children[root] ?? []
+        while !queue.isEmpty {
+            let pid = queue.removeFirst()
+            found.append(pid)
+            queue += children[pid] ?? []
+        }
+        return found
     }
 
     private func responds(at url: URL) async -> Bool {
