@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AITaskKindSchema } from "./ai";
 import {
   BuildEventSchema,
+  BuildInstructionSchema,
   BuildStatusSchema,
   CodeLinkKindSchema,
   MAX_BUILD_CHANGED_FILES,
@@ -46,5 +47,34 @@ describe("Build contracts", () => {
       { type: "mystery" },
       { type: "branch", name: "b", extra: true },
     ]) expect(BuildEventSchema.safeParse(event).success).toBe(false);
+  });
+});
+
+describe("build task instructions", () => {
+  const id = "10000000-0000-4000-8000-000000000001";
+
+  it("accepts the three code link choices with bounded inputs", () => {
+    for (const target of [
+      { kind: "folder", localSelectionId: id },
+      { kind: "github", repository: "owner/Project-1" },
+      { kind: "new_github", repository: "Project-1" },
+    ]) {
+      expect(BuildInstructionSchema.safeParse({ kind: "code_link", projectId: id, target }).success).toBe(true);
+    }
+  });
+
+  it("rejects cloud-supplied paths, URLs and broader approval choices", () => {
+    for (const target of [
+      { kind: "folder", localSelectionId: id, path: "/tmp/project" },
+      { kind: "github", repository: "https://github.com/owner/project" },
+      { kind: "github", repository: "owner/.." },
+      { kind: "github", repository: "-option/project" },
+      { kind: "new_github", repository: "owner/project" },
+    ]) {
+      expect(BuildInstructionSchema.safeParse({ kind: "code_link", projectId: id, target }).success).toBe(false);
+    }
+    expect(BuildInstructionSchema.safeParse({
+      kind: "build_approval", starTaskId: id, requestId: "request", decision: "acceptAlways",
+    }).success).toBe(false);
   });
 });

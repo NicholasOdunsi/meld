@@ -9,6 +9,7 @@ import {
   ProviderSetupStageSchema,
   ProviderStatusSchema,
 } from "./ai";
+import { BuildTaskEventSchema } from "./build";
 
 export const MAX_ACTIVE_TASKS = 32;
 export const MAX_WS_FRAME_BYTES = 1024 * 1024;
@@ -69,6 +70,7 @@ export const ActiveTaskLeaseSchema = z.object({
 export type ActiveTaskLease = z.infer<typeof ActiveTaskLeaseSchema>;
 
 export const TaskEventSchema = z.discriminatedUnion("type", [
+  BuildTaskEventSchema,
   z.object({
     type: z.literal("progress"),
     label: z.string().min(1).max(200),

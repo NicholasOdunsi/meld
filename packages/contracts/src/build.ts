@@ -40,3 +40,30 @@ export const BuildEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("engine_offline") }).strict(),
 ]);
 export type BuildEvent = z.infer<typeof BuildEventSchema>;
+
+const GitHubNamePart = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/;
+const GitHubRepositorySchema = z.string().max(200).refine((value) => {
+  const [owner, repository, extra] = value.split("/");
+  return extra === undefined && repository !== undefined
+    && GitHubNamePart.test(owner) && GitHubNamePart.test(repository);
+}, "Expected an owner/repository name");
+
+export const CodeLinkTargetSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("folder"), localSelectionId: z.uuid() }),
+  z.strictObject({ kind: z.literal("github"), repository: GitHubRepositorySchema }),
+  z.strictObject({ kind: z.literal("new_github"), repository: z.string().max(100).regex(GitHubNamePart) }),
+]);
+
+export const BuildInstructionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("code_link"), projectId: z.uuid(), target: CodeLinkTargetSchema }),
+  z.strictObject({ kind: z.literal("build_turn"), starTaskId: z.uuid(), sourceMessageId: z.uuid() }),
+  z.strictObject({
+    kind: z.literal("build_approval"),
+    starTaskId: z.uuid(),
+    requestId: ApprovalRequestSchema.shape.id,
+    decision: z.enum(["accept", "decline"]),
+  }),
+]);
+export type BuildInstruction = z.infer<typeof BuildInstructionSchema>;
+
+export const BuildTaskEventSchema = z.strictObject({ type: z.literal("build"), event: BuildEventSchema });

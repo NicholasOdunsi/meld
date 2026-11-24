@@ -108,6 +108,7 @@ export class EngineProcess {
   private starting: Promise<EngineHandle> | null = null;
   private stopping: Promise<void> | null = null;
   private recovering: Promise<void> | null = null;
+  private refreshing: Promise<EngineHandle> | null = null;
 
   constructor(private readonly deps: EngineProcessDependencies) {}
 
@@ -122,6 +123,22 @@ export class EngineProcess {
     return this.startOnce(this.lifetime);
   }
 
+  async refreshSession(expired: EngineHandle): Promise<EngineHandle> {
+    const active = await this.start();
+    if (active !== expired) return active;
+    this.refreshing ??= this.renew(active).finally(() => { this.refreshing = null; });
+    return this.refreshing;
+  }
+
+  private async renew(handle: EngineHandle): Promise<EngineHandle> {
+    const lifetime = this.lifetime!;
+    const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(ENGINE_START_TIMEOUT_MS)]);
+    const sessionToken = await this.issueSession(engineEnvironment(this.deps.paths, handle.port), signal);
+    if (this.handle !== handle || signal.aborted) throw new Error("The build engine session is unavailable.");
+    this.handle = { ...handle, sessionToken };
+    return this.handle;
+  }
+
   stop(): Promise<void> {
     if (this.stopping) return this.stopping;
     this.lifetime?.abort();
@@ -130,9 +147,11 @@ export class EngineProcess {
     this.child = null;
     this.handle = null;
     const starting = this.starting;
+    const refreshing = this.refreshing;
     this.stopping = Promise.all([
       child ? this.terminate(child) : Promise.resolve(),
       starting?.catch(() => {}),
+      refreshing?.catch(() => {}),
     ]).then(() => {}).finally(() => { this.stopping = null; });
     return this.stopping;
   }
