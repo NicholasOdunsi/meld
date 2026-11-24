@@ -37,6 +37,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+      - name: The Mac app's bundled preview-edit files are up to date
+        run: git diff --exit-code -- apps/mac/Sources/Orion/Resources/PreviewEdit
 
   database:
     runs-on: ubuntu-latest
