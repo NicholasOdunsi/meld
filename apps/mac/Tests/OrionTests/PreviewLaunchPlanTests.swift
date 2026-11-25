@@ -13,7 +13,7 @@ struct PreviewLaunchPlanTests {
     @Test func nextRunsItsOwnBinaryOnLoopback() throws {
         let plan = try PreviewLauncher.plan(
             packageJSON: manifest(#"{"dependencies":{"next":"15.5.0"}}"#), port: 4100,
-            files: files(["node_modules/next/package.json": #"{"bin":{"next":"./dist/bin/next"}}"#]))
+            files: files(["node_modules/next/package.json": #"{"bin":{"next":"./dist/bin/next"}}"#, "node_modules/next/dist/bin/next": ""]))
         #expect(plan.kind == .node(entry: "node_modules/next/dist/bin/next"))
         #expect(plan.arguments == ["dev", "--hostname", "127.0.0.1", "--port", "4100"])
     }
@@ -21,7 +21,7 @@ struct PreviewLaunchPlanTests {
     @Test func viteRunsItsBinaryWithAStrictPort() throws {
         let plan = try PreviewLauncher.plan(
             packageJSON: manifest(#"{"devDependencies":{"vite":"8.3.6","react":"19"}}"#), port: 5200,
-            files: files(["node_modules/vite/package.json": #"{"bin":{"vite":"bin/vite.js"}}"#]))
+            files: files(["node_modules/vite/package.json": #"{"bin":{"vite":"bin/vite.js"}}"#, "node_modules/vite/bin/vite.js": ""]))
         #expect(plan.kind == .node(entry: "node_modules/vite/bin/vite.js"))
         #expect(plan.arguments == ["--host", "127.0.0.1", "--port", "5200", "--strictPort"])
     }
@@ -29,14 +29,14 @@ struct PreviewLaunchPlanTests {
     @Test func aStringBinFieldWorks() throws {
         let plan = try PreviewLauncher.plan(
             packageJSON: manifest(#"{"devDependencies":{"vite":"8"}}"#), port: 1,
-            files: files(["node_modules/vite/package.json": #"{"bin":"./cli.js"}"#]))
+            files: files(["node_modules/vite/package.json": #"{"bin":"./cli.js"}"#, "node_modules/vite/cli.js": ""]))
         #expect(plan.kind == .node(entry: "node_modules/vite/cli.js"))
     }
 
     @Test func createReactAppIsConfiguredThroughEnvironment() throws {
         let plan = try PreviewLauncher.plan(
             packageJSON: manifest(#"{"dependencies":{"react-scripts":"5.0.1"}}"#), port: 3300,
-            files: files(["node_modules/react-scripts/package.json": #"{"bin":{"react-scripts":"./bin/react-scripts.js"}}"#]))
+            files: files(["node_modules/react-scripts/package.json": #"{"bin":{"react-scripts":"./bin/react-scripts.js"}}"#, "node_modules/react-scripts/bin/react-scripts.js": ""]))
         #expect(plan.arguments == ["start"])
         #expect(plan.environment == ["PORT": "3300", "HOST": "127.0.0.1", "BROWSER": "none"])
     }
@@ -44,8 +44,8 @@ struct PreviewLaunchPlanTests {
     @Test func nextWinsOverViteWhenBothArePresent() throws {
         let plan = try PreviewLauncher.plan(
             packageJSON: manifest(#"{"dependencies":{"next":"15","vite":"8"}}"#), port: 1,
-            files: files(["node_modules/next/package.json": #"{"bin":{"next":"dist/bin/next"}}"#,
-                          "node_modules/vite/package.json": #"{"bin":{"vite":"bin/vite.js"}}"#]))
+            files: files(["node_modules/next/package.json": #"{"bin":{"next":"dist/bin/next"}}"#, "node_modules/next/dist/bin/next": "",
+                          "node_modules/vite/package.json": #"{"bin":{"vite":"bin/vite.js"}}"#, "node_modules/vite/bin/vite.js": ""]))
         #expect(plan.kind == .node(entry: "node_modules/next/dist/bin/next"))
     }
 
@@ -67,6 +67,14 @@ struct PreviewLaunchPlanTests {
             try PreviewLauncher.plan(
                 packageJSON: manifest(#"{"dependencies":{"some-server":"1"},"scripts":{"dev":"x"}}"#),
                 port: 1, files: files([:]))
+        }
+    }
+
+    @Test func aPartialInstallReportsMissingDependencies() {
+        #expect(throws: PreviewLaunchError.dependenciesMissing) {
+            try PreviewLauncher.plan(
+                packageJSON: manifest(#"{"devDependencies":{"vite":"8"}}"#), port: 3000,
+                files: files(["node_modules/vite/package.json": #"{"bin":{"vite":"bin/vite.js"}}"#]))
         }
     }
 

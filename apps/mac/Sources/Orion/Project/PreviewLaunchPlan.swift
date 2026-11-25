@@ -75,12 +75,14 @@ enum PreviewLauncher {
         if let single = manifest["bin"] as? String {
             relative = single
         } else if let table = manifest["bin"] as? [String: String] {
-            relative = table[bin] ?? table.values.first
+            relative = table[bin]
         } else {
             relative = nil
         }
         guard var path = relative, !path.contains("..") else { return nil }
         if path.hasPrefix("./") { path.removeFirst(2) }
-        return "node_modules/\(package)/\(path)"
+        guard !path.isEmpty, !path.hasPrefix("/") else { return nil }
+        let entry = "node_modules/\(package)/\(path)"
+        return files.exists(entry) ? entry : nil
     }
 }

@@ -1054,7 +1054,7 @@ In `.github/workflows/ci.yml`, after the `- run: pnpm build` line in the `valida
 Run: `pnpm --filter @meld/preview-edit build`
 Expected: `apps/mac/Sources/Orion/Resources/PreviewEdit/edit-helper.mjs` exists.
 
-Then, with the Mac's own Node (the runtime the preview uses): 
+Then, with the Mac's own Node (the runtime the preview uses):
 
 ```bash
 NODE="$HOME/Library/Application Support/Meld/runtime/current/bin/node"
