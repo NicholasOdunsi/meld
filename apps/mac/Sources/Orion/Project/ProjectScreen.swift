@@ -16,7 +16,13 @@ struct ProjectScreen: View {
     @State private var previewArtifact: StreamArtifact?
     @State private var previewFileURL: URL?
     @State private var previewFrames: [String: PreviewFrame] = [:]
+    @State private var previewEditAvailable = false
     @State private var appliedPreviewFocus: UUID?
+
+    private struct BoardPreviews: Decodable {
+        let frames: [PreviewFrame]
+        let editAvailable: Bool
+    }
 
     private struct PreviewFrame: Decodable, Equatable {
         let id: String
@@ -26,6 +32,24 @@ struct ProjectScreen: View {
         let height: CGFloat
         let zoom: CGFloat
         let interactive: Bool
+        let canvasLeft: CGFloat?
+        let canvasRight: CGFloat?
+        let canvasTop: CGFloat?
+        let canvasBottom: CGFloat?
+
+        var bounds: CGRect {
+            CGRect(x: x + 2 * zoom, y: y + 2 * zoom, width: (width - 4) * zoom, height: (height - 4) * zoom)
+        }
+
+        var visibleBounds: CGRect {
+            let bounds = self.bounds
+            let left = max(bounds.minX, canvasLeft ?? bounds.minX)
+            let right = min(bounds.maxX, canvasRight ?? bounds.maxX)
+            let top = max(bounds.minY, canvasTop ?? bounds.minY)
+            let bottom = min(bounds.maxY, canvasBottom ?? bounds.maxY)
+            guard right > left, bottom > top else { return .zero }
+            return CGRect(x: left, y: top, width: right - left, height: bottom - top)
+        }
     }
 
     var body: some View {
@@ -85,6 +109,7 @@ struct ProjectScreen: View {
         }
         .task(id: canvasFocusKey) { await syncCanvasFocus() }
         .task(id: previewTrackingKey) { await trackPreviewFrames() }
+        .onDisappear { frame.previewEditor.stop() }
         .quickLookPreview($previewFileURL)
         .overlay {
             if let kind = starDialog {
@@ -124,6 +149,8 @@ struct ProjectScreen: View {
         ZStack(alignment: .topLeading) {
             ForEach(frame.canvasPreviews) { preview in
                 if let box = previewFrames[preview.id] {
+                    let visible = box.visibleBounds
+                    let bounds = box.bounds
                     livePreview(preview)
                         .frame(width: box.width - 4, height: box.height - 4)
                         .clipShape(.rect(cornerRadius: OrionRadius.medium))
@@ -133,8 +160,12 @@ struct ProjectScreen: View {
                                 .allowsHitTesting(false)
                         }
                         .scaleEffect(box.zoom, anchor: .topLeading)
-                        .offset(x: box.x + 2 * box.zoom, y: box.y + 2 * box.zoom)
-                        .allowsHitTesting(box.interactive)
+                        .offset(x: bounds.minX - visible.minX, y: bounds.minY - visible.minY)
+                        .frame(width: visible.width, height: visible.height, alignment: .topLeading)
+                        .clipped()
+                        .contentShape(.rect)
+                        .offset(x: visible.minX, y: visible.minY)
+                        .allowsHitTesting(box.interactive && !visible.isEmpty)
                 }
             }
         }
@@ -142,13 +173,30 @@ struct ProjectScreen: View {
     }
 
     private func livePreview(_ preview: FrameModel.CanvasPreview) -> some View {
-        VStack(spacing: 0) {
+        let editor = frame.previewEditor
+        let editing = previewEditAvailable && editor.starID == preview.id
+        let lock = frame.previewEditLockReason(preview.id)
+        let fields = editing && lock == nil ? editor.selection?.fields : nil
+        return VStack(spacing: 0) {
             HStack(spacing: OrionSpacing.xs) {
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .accessibilityHidden(true)
                 Text(preview.title)
                     .lineLimit(1)
                 Spacer(minLength: OrionSpacing.xs)
+                if previewEditAvailable {
+                    Button {
+                        editor.toggle(preview.id)
+                    } label: {
+                        Label(editing ? "Stop Editing" : "Edit", systemImage: "pencil")
+                            .labelStyle(.iconOnly)
+                            .padding(OrionSpacing.xs)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!editing && lock != nil)
+                    .help(lock ?? (editing ? String(localized: "Stop editing") : String(localized: "Edit this page")))
+                    .foregroundStyle(editing ? OrionColor.dayBreakBlue.color : .secondary)
+                }
                 Button {
                     NSWorkspace.shared.open(preview.url)
                 } label: {
@@ -163,20 +211,36 @@ struct ProjectScreen: View {
             .foregroundStyle(OrionColor.dayBreakBlue.color)
             .padding(.horizontal, OrionSpacing.sm)
             .background(.regularMaterial)
-            CanvasLivePreview(url: preview.url)
+            CanvasLivePreview(
+                url: preview.url,
+                editing: editing,
+                textEditable: fields?["text"]?.editable == true,
+                resizable: fields?["width"]?.editable == true && fields?["height"]?.editable == true
+            ) { message in
+                guard previewEditAvailable, editor.starID == preview.id,
+                      frame.buildPreview.runningURL(for: preview.id) == preview.url else { return }
+                editor.receive(message)
+            }
+            .id(preview.url)
         }
     }
 
     private var previewTrackingKey: String {
-        let ids = frame.canvasPreviews.map(\.id)
-        return (ids + [frame.canvasPreviewFocus?.requestID.uuidString ?? ""]).joined(separator: ":")
+        let previews = frame.canvasPreviews.map { "\($0.id)=\($0.url.absoluteString)" }
+        return (previews + [frame.snapshot?.currentRoomID ?? "", frame.canvasPreviewFocus?.requestID.uuidString ?? "",
+                            frame.previewEditor.starID ?? ""]).joined(separator: ":")
     }
 
     @MainActor
     private func trackPreviewFrames() async {
         let previews = frame.canvasPreviews
+        let editor = frame.previewEditor
+        if let starID = editor.starID, !previews.contains(where: { $0.id == starID }) { editor.stop() }
+        editor.resetBoardExchange()
         guard !previews.isEmpty, let roomID = frame.snapshot?.currentRoomID else {
             previewFrames = [:]
+            previewEditAvailable = false
+            if let roomID = frame.snapshot?.currentRoomID { await exchangePreviewEdits(editor, roomID: roomID) }
             return
         }
         let focus = frame.canvasPreviewFocus
@@ -186,20 +250,23 @@ struct ProjectScreen: View {
             let result = try? await webView.callAsyncJavaScript(
                 """
                 const board = window.__orionBoard;
-                if (board?.roomId !== roomId || !board.previewFrame) return [];
-                return stars.flatMap(star => {
+                if (board?.roomId !== roomId || !board.previewFrame) return { frames: [], editAvailable: false };
+                const frames = stars.flatMap(star => {
                     const bounds = board.previewFrame(star.id, star.title, star.id === focusId);
                     return bounds ? [{id: star.id, ...bounds}] : [];
                 });
+                return { frames, editAvailable: !!window.__orionPreviewEdit };
                 """,
                 arguments: ["roomId": roomID, "stars": stars, "focusId": focusID],
                 in: nil, contentWorld: .page
             )
             if Task.isCancelled { return }
-            if let json = result as? [[String: Any]],
+            if let json = result as? [String: Any],
                let data = try? JSONSerialization.data(withJSONObject: json),
-               let frames = try? JSONDecoder().decode([PreviewFrame].self, from: data) {
-                let valid = frames.filter {
+               let board = try? JSONDecoder().decode(BoardPreviews.self, from: data) {
+                if previewEditAvailable != board.editAvailable { previewEditAvailable = board.editAvailable }
+                if !board.editAvailable, editor.starID != nil { editor.stop() }
+                let valid = board.frames.filter {
                     [$0.x, $0.y, $0.width, $0.height, $0.zoom].allSatisfy(\.isFinite)
                         && (32...8192).contains($0.width) && (32...8192).contains($0.height)
                         && (0.1...30).contains($0.zoom)
@@ -208,7 +275,21 @@ struct ProjectScreen: View {
                 if previewFrames != next { previewFrames = next }
                 if next[focusID] != nil { appliedPreviewFocus = focus?.requestID }
             }
+            if previewEditAvailable && editor.needsBoardExchange {
+                await exchangePreviewEdits(editor, roomID: roomID)
+            }
             try? await Task.sleep(for: .milliseconds(60))
+        }
+    }
+
+    @MainActor
+    private func exchangePreviewEdits(_ editor: PreviewEditor, roomID: String) async {
+        await editor.exchange { script, arguments in
+            try? await webView.callAsyncJavaScript(
+                "if (window.__orionBoard?.roomId !== roomId) return null;\n" + script,
+                arguments: arguments.merging(["roomId": roomID]) { _, roomID in roomID },
+                in: nil, contentWorld: .page
+            )
         }
     }
 

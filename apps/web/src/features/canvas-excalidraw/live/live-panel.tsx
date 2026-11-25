@@ -51,30 +51,53 @@ export function LivePanel({ tab, onTabChange, onClose, onKeyDown, disabledTabs, 
     event.currentTarget.querySelector<HTMLElement>(`[data-tab="${next.value}"]`)?.focus();
   }
   return (
-    <LayoutPanel width={LIVE_PANEL_WIDTH} padding={0} isScrollable={false} label="Live screen">
-      <VStack gap={0} className="orion-panel orion-i-scope" data-testid="live-panel" onKeyDown={onKeyDown}>
+    <InspectorPanelShell
+      label="Live screen"
+      testId="live-panel"
+      onClose={onClose}
+      onKeyDown={onKeyDown}
+      header={(
+        <HStack role="tablist" aria-label="Panel view" className="orion-seg" onKeyDown={moveTab}>
+          {TABS.map((item) => {
+            const reason = reasonFor(item.value);
+            return (
+              <button
+                key={item.value}
+                type="button"
+                role="tab"
+                data-tab={item.value}
+                className="orion-seg__tab"
+                aria-selected={item.value === tab}
+                aria-disabled={reason ? "true" : undefined}
+                title={reason}
+                tabIndex={item.value === tab ? 0 : -1}
+                onClick={() => { if (!reason) onTabChange(item.value); }}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </HStack>
+      )}
+    >
+      {children}
+    </InspectorPanelShell>
+  );
+}
+
+export function InspectorPanelShell({ label, header, onClose, onKeyDown, testId, children }: {
+  label: string;
+  header: ReactNode;
+  onClose: () => void;
+  onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+  testId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <LayoutPanel width={LIVE_PANEL_WIDTH} padding={0} isScrollable={false} label={label}>
+      <VStack gap={0} className="orion-panel orion-i-scope" data-testid={testId} onKeyDown={onKeyDown}>
         <header className="orion-panel__top">
-          <HStack role="tablist" aria-label="Panel view" className="orion-seg" onKeyDown={moveTab}>
-            {TABS.map((item) => {
-              const reason = reasonFor(item.value);
-              return (
-                <button
-                  key={item.value}
-                  type="button"
-                  role="tab"
-                  data-tab={item.value}
-                  className="orion-seg__tab"
-                  aria-selected={item.value === tab}
-                  aria-disabled={reason ? "true" : undefined}
-                  title={reason}
-                  tabIndex={item.value === tab ? 0 : -1}
-                  onClick={() => { if (!reason) onTabChange(item.value); }}
-                >
-                  {item.label}
-                </button>
-              );
-            })}
-          </HStack>
+          {header}
           <PanelCloseButton onClick={onClose} />
         </header>
         {children}

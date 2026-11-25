@@ -14,6 +14,29 @@ final class FrameModel {
     private(set) var snapshot: FrameSnapshot?
     private(set) var stream: StreamSnapshot?
     let buildPreview = BuildPreview()
+    @ObservationIgnored private(set) lazy var previewEditor = PreviewEditor(
+        helper: PreviewEditHelper(node: buildPreview.nodeURL),
+        root: { [weak self] starID in self?.buildPreview.worktree(for: starID) },
+        lockReason: { [weak self] starID in self?.previewEditLockReason(starID) },
+        send: { [weak self] body, starID in
+            guard let self, self.previewEditLockReason(starID) == nil else { return false }
+            let choice = self.selectedStreamModel
+            let usesBuildProvider = choice.provider == "codex" || choice.provider == "claude"
+            return await self.sendStream(body, provider: usesBuildProvider ? choice.provider : nil,
+                                         model: usesBuildProvider ? choice.model : nil, starTaskID: starID, build: true)
+        })
+
+    func previewEditLockReason(_ starID: String) -> String? {
+        guard let star = visibleStream?.stars.first(where: { $0.id == starID }),
+              buildPreview.runningURL(for: starID) != nil else {
+            return String(localized: "The preview isn't running.")
+        }
+        if star.status == .working || star.status == .needs_you || star.build?.approval != nil {
+            return String(localized: "This Star is still building. Edit once it finishes.")
+        }
+        return nil
+    }
+
     struct CanvasPreview: Identifiable, Equatable {
         let id: String
         let title: String
@@ -359,7 +382,7 @@ final class FrameModel {
         guard await picker.begin() == .OK, let folder = picker.url,
               visibleStream?.roomID == roomID else { return false }
         do {
-            let meld = URL.applicationSupportDirectory.appending(path: "Meld", directoryHint: .isDirectory)
+            let meld = buildPreview.meldRoot
             let config = try Data(contentsOf: meld.appending(path: "config.json"))
             struct DeviceConfig: Decodable { let deviceId: UUID }
             let deviceID = try JSONDecoder().decode(DeviceConfig.self, from: config).deviceId.uuidString.lowercased()
@@ -456,6 +479,7 @@ final class FrameModel {
 
     /// Signed out (or on a page outside Orion's frame): hide the sidebar.
     func pageDidLeaveFrame() {
+        previewEditor.stop()
         buildPreview.stop()
         previewStars.removeAll()
         canvasPreviewFocus = nil
